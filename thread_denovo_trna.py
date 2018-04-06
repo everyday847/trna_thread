@@ -107,6 +107,9 @@ def ann_to_mod(ann_seq):
         elif c == 'u': mod_seq += 'U'
         else:
             assert(c == 'X')
+            print("not yet supported")
+            # AMW TODO
+            exit()
 
     return mod_seq
 
@@ -180,11 +183,12 @@ def thread_sequence_on_pdb(seq, pdb, mapfile):
 
     # Question of how to incorporate native constraints, a guaranteed foldtree, cart bonded, density, etc.
     # unresolved.
-    command = ["/Users/amw579/dev_ui/Rosetta/main/source/bin/rna_thread_and_minimize", 
+    command = ["/home/andy/Rosetta/main/source/bin/rna_thread_and_minimize", 
         "-s", pdb, 
         "-seq", seq.replace('-',''), 
         "-input_sequence_type", "MODOMICS", 
         "-score:weights", "stepwise/rna/rna_res_level_energy7beta.wts",
+        "-guarantee_no_DNA", "true",
         "-set_weights", "other_pose", "0.0", "intermol", "0.0", "loop_close", "0.0", "free_suite", "0.0", "free_2HOprime", "0.0"]
     if mapfile is not None:
         command.append("elec_dens_fast")
@@ -235,17 +239,22 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile):
     def trim_pdb_to_res(pdb, new_pdb, pos):
         def atom(line):
             return line[12:16]
+        def res(line):
+            return line[22:26]
         lines = []
         with open(pdb) as f:
             lines = f.readlines()
         with open(new_pdb, "w") as f:
             res_index = 1
+            lineres = None
             for line in lines:
                 if line[0:4] != "ATOM" and line[0:6] != "HETATM": continue
                 #print(atom(line))
                 #print(line, res_index)
                 if res_index in pos: f.write(line)
-                if atom(line) == " P  ": res_index += 1
+                if res(line) != lineres:
+                    if lineres is not None: res_index += 1
+                    lineres = res(line)
 
     pdb_pos_trim = [align_pos2pdb_pos[c] for c in common_structure if c in align_pos2pdb_pos.keys()]
     print(pdb_pos_trim)
@@ -254,11 +263,12 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile):
     # Thread them to their new identities.
     tgt_seq_for_thread = "".join([tgt_seq[c] for c in common_structure])
 
-    command = ["/Users/amw579/dev_ui/Rosetta/main/source/bin/rna_thread_and_minimize", 
+    command = ["/home/andy/Rosetta/main/source/bin/rna_thread_and_minimize", 
         "-s", pdb.replace('.pdb', '_trimmed.pdb'), 
         "-seq", tgt_seq_for_thread.replace('-',''), 
         "-input_sequence_type", "MODOMICS", 
         "-score:weights", "stepwise/rna/rna_res_level_energy7beta.wts",
+        "-guarantee_no_DNA", "true",
         "-set_weights", "other_pose", "0.0", "intermol", "0.0", "loop_close", "0.0", "free_suite", "0.0", "free_2HOprime", "0.0"]
     # Testing not using mapfile for the new no-bb motion option
     #if mapfile is not None:
@@ -343,7 +353,7 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile):
 
 
     # Do denovo run.
-    command = ["/Users/amw579/dev_ui/Rosetta/main/source/bin/rna_denovo", 
+    command = ["/home/andy/Rosetta/main/source/bin/rna_denovo", 
         "-s", "input.pdb", 
         "-fasta", "target.fasta", 
         "-minimize_rna", "true",
@@ -352,6 +362,7 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile):
         "-score:weights", "stepwise/rna/rna_res_level_energy7beta.wts",
         "-set_weights", "other_pose", "0.0", "intermol", "0.0", "loop_close", "0.0", "free_suite", "0.0", "free_2HOprime", "0.0",
         "-nstruct", "100",
+        "-guarantee_no_DNA", "true",
         "-out:file:silent", "modeled.out"]
     
     subprocess.run(command)
@@ -359,12 +370,17 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile):
 
 
 
+def seq_from_file(fn):
+    with open(fn) as f:
+        return f.readlines()[0].strip()
 
-
-def main(pdb="start.pdb", mapfile=None, tgt_seq=None):
+def main(args):
+    #pdb="start.pdb", mapfile=None, tgt_seq=None):
+    print(args.seq_file)
+    pdb, mapfile, tgt_seq  = args.pdb, args.mapfile, seq_from_file(args.seq_file[0])
     import os
     dirname = os.path.dirname(__file__)
-    sequences = get_seqs(dirmame+"data/all_trna.mfa")
+    sequences = get_seqs(dirname+"/data/all_trna.mfa")
     seq = match_pdb_to_best_sequence(pdb, sequences)
     # There are no gaps with this sequence.
     thread_sequence_on_pdb(seq, pdb, mapfile)
@@ -376,5 +392,33 @@ def main(pdb="start.pdb", mapfile=None, tgt_seq=None):
             tgt_seq = ann_to_mod(tgt_seq)
         remodel_new_sequence(seq, tgt_seq, pdb.replace('.pdb', '_0001.pdb'), mapfile)
 
+
+"""
+We need to make more stuff optional so that users can request that we use our pre-existing template library
+"""
+
+import argparse
+
 if __name__ == '__main__':
-    main(*sys.argv[1:])
+    parser = argparse.ArgumentParser(description="Thread tRNAs onto templates")
+    parser.add_argument('--pdb', nargs='?', help='template (if omitted, use shipped library')
+    parser.add_argument('--mapfile', nargs='?', help='electron density mapfile associated with template (useful for keeping minimization close)')
+    parser.add_argument('--seq_file', nargs=1, help='target sequence file in modomics format')
+
+    args = parser.parse_args()
+    main(args)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
