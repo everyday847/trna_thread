@@ -3,60 +3,41 @@
 import sys, subprocess
 
 """
-OK, suppose that you have a file of the form:
+Homology modeling of novel tRNA sequences expressed in Modomics's extended
+single-letter-code nomenclature.
 
->tdbR00000589|Aeropyrum_pernix|56636|Arg|UCU
--GGGCCCGUAGCUCAGCCAGGAC-AGAGCGCCGGCCUUCUAAGCCGGUG-------------------CUGCCGGGUUCAAAUCCCGGCGGGCCCGCCA
->tdbR00000588|Aeropyrum_pernix|56636|Asp|GUC
--GCCGCGGUAGUAUAGCCUGGACUAGUAUGCGGGCCUGUCAAGCCCGUG-------------------A-CCCGGGUUCAAAUCCCGGCCGCGGCGCCA
->tdbR00000583|Aeropyrum_pernix|56636|Cys|GCA
--GCCGGGGUGGCCGAGC--GGUCUAAGGCGGCGGGCUGCAGACCCGUUA-------G-----------UUCCCGGGUUCGAAUCCCGGCCCCGGCUCCA
- (((((((..((((...........)))).(((((.......)))))........................(((((.......))))))))))))....
+* Distributed with this software *
+ - a multiple sequence alignment of every atomic resolution tRNA in the PDB 
+   (omitting massive ribosome structures)
+ - those structures, trimmed and renormalized to make them robust for Rosetta
 
-i.e., a tRNA MSA. A plausible task is:
+* Your responsibility *
+ - Provide a tRNA sequence. You can manually align it against our MSA or we can
+   do it for you.
+ - Select a modeling method. Your options:
+   + FARFAR -- relatively fast and relatively low-resolution, should yield 
+     ~10 structures per CPU-hour
+   + STEPWISE -- relatively slow but very high-resolution, should yield 
+     1 structure per ~6 CPU-hours. (Use for structures with a few deletions 
+     making key contacts, like if the T-loop residues G18-G19 are altered vs.
+     the best available template.)
+ - Provide a number of desired structures to produce. This many structures will
+   be produced for *every* template that's identified.
 
-"I have a tRNA scaffold that looks like entry #2 and I need to turn it into a PDB that looks like 
-entry #3." So we break this into:
-    1. threading a (possibly NCNT containing) sequence onto a MATCHING scaffold (use density if
-    available, cartesian minimization for sure). (to ensure that PDB truly matches entry #2)
-    2. Use above strings w/ 'known secstruct' to figure out a 'domain decomposition' for a denovo
-    job.
-    3. Use above strings w/ knowledge about base pairing (i.e. -- eliminate everything but acgu)
-    to create new secstruct string.
-
-
-DOMAIN ANALYSIS:
-
-If a modification (ins/del) happens in a position marked below with S you just need a simple loop
-rebuild, b/c no tertiary contact
-
-(((((((..((((...........)))).(((((SSSSSSS)))))........................(((((.......))))))))))))....
-
-But those are unlikely. More likely are D-loop:
-
-(((((((..((((DDDDDDDDDDD)))).(((((.......)))))........................(((((.......))))))))))))....
-
-in which case rebuild every residue EXCEPT G18-19 but add in 59-60 (between bp 53-61 and UA handle)
-
-(((((((..((((DDDDD..DDDD)))).(((((.......)))))........................(((((.....DD))))))))))))....
-
-
-or V-region (44-48, but can get insertions making everything longer ofc)
-
-(((((((..((((...........)))).(((((.......)))))VVVVVVVVVVVVVVVVVVVVVVVV(((((.......))))))))))))....
-
-makes some contacts:
-
-(((((((VV((((...........))))V(((((.......)))))VVVVVVVVVVVVVVVVVVVVVVVV(((((.......))))))))))))....
-
-Let's start with that assumption, and plot out what has to happen based on "- becomes letter" and
-reverse.
+ * Optional *
+  - If there is a structure you believe ought to be a template that isn't coming
+    up (perhaps it's your structure, which you haven't deposited yet!), you can 
+    manually add a structure to the template library with its sequence alignment
+    (or edit an existing alignment).
+  - If no sequence in the PDB is a good template match to your target sequence,
+    then you can instead operate in 'density mode', which attempts template-free
+    modeling guided instead by weak electron density and base pairing 
+    constraints.
 """
 
-
-# This string 'colors' bits of tRNA structure that should be rebuilt together.
-trna_structure_coloring = "-(((((((VV((((DDDDD..DDDD))))V(((((.......)))))VVVVVVVVVVVVVVVVVVVVVVVV(((((.....DD))))))))))))...."
-
+###
+#   Data file manipulation: reading in sequence data and PDB file references.
+###
 
 def get_seqs_mfa(fn):
     """
@@ -77,8 +58,11 @@ def get_seqs(fn):
     #print(sequences)
     return sequences
 
-# YG is yW, AET is MTA, G7M is 7MG, QUO is   Q, 1RN is CNS, YYG is yW [ish], 70U is MST, 12A is M26, 2MU is 52U, 6IA is I6A
+###
+#   Sequence translation (among Rosetta and Modomics nomenclatures)
+###
 
+# YG is yW, AET is MTA, G7M is 7MG, QUO is   Q, 1RN is CNS, YYG is yW [ish], 70U is MST, 12A is M26, 2MU is 52U, 6IA is I6A
 tlc_to_mod = { #                                                                       note this is the enantiomer at the AA
                "GTP": 'G', " YG": 'Y', "AET": 'E', "G7M": '7', "QUO": 'Q', "1RN": '$', "YYG": 'Y', "  I": 'I',
                "70U": '3', "12A": '[', "2MU": '\\', "6IA": '+',
@@ -93,7 +77,6 @@ tlc_to_mod = { #                                                                
                "1PU": ']', "MPU": 'Z' }
 mod_to_tlc = dict(zip(tlc_to_mod.values(), tlc_to_mod.keys()))
 
-        
 def mod_from_tlc(tlc):
     """
     Translates modomics single letter codes from 3LCs
@@ -125,7 +108,18 @@ def ann_to_mod(ann_seq):
 
     return mod_seq
 
+###
+#   Sequence alignment scoring
+###
+
 def simple_match(seq1, seq2):
+	"""
+	Assumes seq1 and seq2 are aligned already (i.e., a 'static score').
+	Rewards similarity in length, letter matches, purine matches, and U variant
+	matches. Could reward other variants! Those just took priority because of 
+	the ultra-characteristic TP sequence.
+	"""
+
     score = len(seq1) - len(seq2)
     for c1, c2 in zip(seq1, seq2):
         if c1 == c2: score += 5
@@ -143,6 +137,15 @@ def simple_match(seq1, seq2):
     return score
 
 
+"""
+DOMAIN ANALYSIS:
+
+1. Proximal stuff
+2. Never rebuild key tert contact (GG t-loop) unless it is directly altered 
+"""
+
+# This string 'colors' bits of tRNA structure that should be rebuilt together.
+trna_structure_coloring = "P(((((((VV((((DDDDD..DDDD))))V(((((SSSSSSS)))))VVVVVVVVVVVVVVVVVVVVVVVV(((((.....DD))))))))))))PPPP"
 
 def match_seq_to_best_template_seq(tgt_seq, templates):
     
@@ -171,7 +174,6 @@ def match_seq_to_best_template_seq(tgt_seq, templates):
 
     return new_seqs
 
-# THIS WON'T WORK ANYMORE because now second arg of match_seq_to_best_template_seq is a dict
 def match_pdb_to_best_sequence(pdb, templates):
     """
     Get FASTA information from provided PDB. To which sequence is it closest? Pick it.
@@ -471,37 +473,24 @@ def examine(sequences):
         #print(pdb, import_dash_pattern(seq, modomics_from_pdb(pdb)))
     f.close()
 
-def main(tgt_seq):
-#pdb="start.pdb", mapfile=None, tgt_seq=None):
-    # templates will be a dict from seq to filename. So, you get your template
-    # by asking for templates[closest_seq]
-    templates = get_seqs("all_trna_structure_seqs.dat")
+def main(tgt_seq, nstruct):
++    templates = get_seqs("all_trna_structure_seqs.dat")
     
     with open(tgt_seq) as f:
         tgt_seq = f.readlines()[0].strip()
 
     # Temporarily using this script to get alignments for our new library, 
     # below is commented
-    #seq = match_pdb_to_best_sequence(pdb, sequences)
     pdb_seq_list = match_seq_to_best_template_seq(tgt_seq, templates)
-    # There are no gaps with this sequence.
-    #thread_sequence_on_pdb(seq, pdb, mapfile)
-    #pdb = thread_sequence_on_pdb(tgt_seq, pdb, mapfile)
-
-    #print("I think my target sequence is")
-    #print(tgt_seq)
-    #print("I think my starting sequence is")
-    #print(seq)
-    #exit()
     # Whatever the new sequence is, it's auto-aligned to seq and so we know how
     # to set up a denovo job for it.
     
-    # Maybe there are many returned! That's cool!
+    # Maybe there are many returned! That's cool; do them all
     for p, s in pdb_seq_list:
         if 'a' in tgt_seq and 'g' in tgt_seq and 'c' in tgt_seq and 'u' in tgt_seq:
             # annotated seq format, must translate first.
             tgt_seq = ann_to_mod(tgt_seq)
-        remodel_new_sequence(s, tgt_seq, p)
+        remodel_new_sequence(s, tgt_seq, p, nstruct)
 
 if __name__ == '__main__':
     main(*sys.argv[1:])
