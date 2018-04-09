@@ -39,6 +39,17 @@ single-letter-code nomenclature.
 #   Data file manipulation: reading in sequence data and PDB file references.
 ###
 
+def exe(name):
+    """
+    For distribution, once I've merged into master: look for ROSETTA in 
+    os.environ and return exe path based on that.
+    """
+    import os
+    if os.path.exists("/home/andy"):
+        return "/home/andy/Rosetta/main/source/bin/" + name
+    else:
+        return "/Users/amw579/dev_ui/Rosetta/main/source/bin/" + name
+
 def my_loc():
     import os
     return os.path.dirname(os.path.realpath(__file__))
@@ -230,7 +241,7 @@ def thread_sequence_on_pdb(seq, pdb, mapfile):
 
     # Question of how to incorporate native constraints, a guaranteed foldtree, cart bonded, density, etc.
     # unresolved.
-    command = ["/home/andy/Rosetta/main/source/bin/rna_thread_and_minimize", 
+    command = [exe("rna_thread_and_minimize"),
         "-s", pdb, 
         "-seq", seq.replace('-',''), 
         "-input_sequence_type", "MODOMICS", 
@@ -343,7 +354,7 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
     # Thread them to their new identities.
     tgt_seq_for_thread = "".join([tgt_seq[c] for c in common_structure])
 
-    command = ["/home/andy/Rosetta/main/source/bin/rna_thread_and_minimize", 
+    command = [exe("rna_thread_and_minimize"),
         "-s", pdb.replace('.pdb', '_trimmed.pdb'), 
         "-seq", tgt_seq_for_thread.replace('-',''), 
         "-input_sequence_type", "MODOMICS", 
@@ -438,7 +449,7 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
 
 
     # Do denovo run.
-    command = ["/Users/amw579/dev_ui/Rosetta/main/source/bin/rna_denovo", 
+    command = [exe("rna_denovo"),
         "-s", "{}_input.pdb".format(old_pdb), 
         "-fasta", "target.fasta", 
         "-minimize_rna", "true",
