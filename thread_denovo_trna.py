@@ -39,6 +39,10 @@ single-letter-code nomenclature.
 #   Data file manipulation: reading in sequence data and PDB file references.
 ###
 
+def my_loc():
+    import os
+    return os.path.dirname(os.path.realpath(__file__))
+
 def get_seqs_mfa(fn):
     """
     Get sequences out of the tRNAdb mfa
@@ -47,7 +51,7 @@ def get_seqs_mfa(fn):
     with open(fn) as f:
         lines = f.readlines()
     sequences = [l.strip() for l in lines[1::2]]
-    #print(sequences)
+    print(len(sequences), "sequences")
     return sequences
 
 def get_seqs(fn):
@@ -116,12 +120,15 @@ def ann_to_mod(ann_seq):
 ###
 
 def simple_match(seq1, seq2):
-	"""
-	Assumes seq1 and seq2 are aligned already (i.e., a 'static score').
-	Rewards similarity in length, letter matches, purine matches, and U variant
-	matches. Could reward other variants! Those just took priority because of 
-	the ultra-characteristic TP sequence.
-	"""
+    """
+    Assumes seq1 and seq2 are aligned already (i.e., a 'static score').
+    Rewards similarity in length, letter matches, purine matches, and U variant
+    matches. Could reward other variants! Those just took priority because of 
+    the ultra-characteristic TP sequence.
+
+    Ooh, consider not penalizing complementary WC mismatches within helices?
+    would need SS
+    """
 
     score = len(seq1) - len(seq2)
     for c1, c2 in zip(seq1, seq2):
@@ -135,6 +142,7 @@ def simple_match(seq1, seq2):
             elif c1 == 'T' and c2 == 'U': score += 3
             elif c1 == 'U' and c2 == 'P': score += 3
             elif c1 == 'P' and c2 == 'U': score += 3
+            elif (c1 == '-' or c2 == '-'): score -= 10
 
     #print(score, seq1, seq2)
     return score
@@ -174,14 +182,22 @@ def match_seq_to_best_template_seq(tgt_seq, templates):
     best_score = max(seq_matching_to_pdb.values())
     new_seqs = [(p, s) for (p, s) in new_seqs if seq_matching_to_pdb[s] == best_score]
     print("There are, for top seq exact-match", len(new_seqs), "(each scores {score} out of {length})".format(score=best_score, length=pdb_len))
+    for p,s in new_seqs:
+        print(p)
+        print(s)
 
     return new_seqs
 
-def match_pdb_to_best_sequence(pdb, templates):
+def match_pdb_to_best_sequence(pdb, MSA_file):
     """
     Get FASTA information from provided PDB. To which sequence is it closest? Pick it.
     """
 
+    MSA_seqs = get_seqs_mfa(MSA_file)
+    # Has to have some dummy key value; must be unique.
+    templates = {s: s for s in MSA_seqs}
+    modomics_seq = modomics_from_pdb(pdb)
+    print("Attempting to align", modomics_seq, "to MSA templates length", len(templates))
     return match_seq_to_best_template_seq(modomics_from_pdb(pdb), templates)
 
 
@@ -219,6 +235,7 @@ def thread_sequence_on_pdb(seq, pdb, mapfile):
         "-seq", seq.replace('-',''), 
         "-input_sequence_type", "MODOMICS", 
         "-score:weights", "stepwise/rna/rna_res_level_energy7beta.wts",
+        "-ignore_zero_occupancy", "false",
         "-guarantee_no_DNA", "true",
         "-set_weights", "other_pose", "0.0", "intermol", "0.0", "loop_close", "0.0", "free_suite", "0.0", "free_2HOprime", "0.0"]
     if mapfile is not None:
@@ -285,6 +302,10 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
     align_pos2pdb_pos = dict(zip(pdb_pos2align_pos.values(), pdb_pos2align_pos.keys()))
 
     def trim_pdb_to_res(pdb, new_pdb, pos):
+        def nres(pdb):
+            with open(pdb) as f:
+                return len([ 0 for l in f.readlines() if ' P  ' in l])
+
         def atom(line):
             return line[12:16]
         def res(line):
@@ -292,17 +313,28 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
         lines = []
         with open(pdb) as f:
             lines = f.readlines()
+        # Renumber the PDB, get a dict from seqpos => lines
+        # write all in pos
+        subprocess.run(['cp', pdb, new_pdb])
+        print("I think there are {} res".format(nres(new_pdb)))
+        subprocess.run(['renumber_pdb_in_place.py', new_pdb, "A:1-{}".format(nres(new_pdb))])
+        with open(new_pdb) as f:
+            lines = f.readlines()
+        res_to_line_dict = { x: [l for l in lines if int(res(l).strip()) == x and int(res(l).strip()) in pos] for x in pos }
         with open(new_pdb, "w") as f:
-            res_index = 1
-            lineres = None
-            for line in lines:
-                if line[0:4] != "ATOM" and line[0:6] != "HETATM": continue
-                #print(atom(line))
-                #print(line, res_index)
-                if res_index in pos: f.write(line)
-                if res(line) != lineres:
-                    if lineres is not None: res_index += 1
-                    lineres = res(line)
+            for x in pos:
+                for l in res_to_line_dict[x]:
+                    f.write(l)
+            #res_index = 1
+            #lineres = None
+            #for line in lines:
+            #    if line[0:4] != "ATOM" and line[0:6] != "HETATM": continue
+            #    #print(atom(line))
+            #    #print(line, res_index)
+            #    if res_index in pos: f.write(line)
+            #    if res(line) != lineres:
+            #        if lineres is not None: res_index += 1
+            #        lineres = res(line)
 
     pdb_pos_trim = [align_pos2pdb_pos[c] for c in common_structure if c in align_pos2pdb_pos.keys()]
     print(pdb_pos_trim)
@@ -317,6 +349,7 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
         "-input_sequence_type", "MODOMICS", 
         "-score:weights", "stepwise/rna/rna_res_level_energy7beta.wts",
         "-guarantee_no_DNA", "true",
+        "-ignore_zero_occupancy", "false",
         "-overwrite",
         "-set_weights", "other_pose", "0.0", "intermol", "0.0", "loop_close", "0.0", "free_suite", "0.0", "free_2HOprime", "0.0"]
     # Testing not using mapfile for the new no-bb motion option
@@ -461,22 +494,21 @@ def import_dash_pattern(dashed_seq, other_seq):
 
     return other_seq + (len(dashed_seq) - len(other_seq)) * '-'
 
-
-def examine(sequences):
+def align_template_library(MSA):
     """
     This was used to set up all the actual trna structure library sequences.
     """
-    import glob
-    f = open("all_trna_structure_seqs.dat", "w")
+    import glob, os
+    f = open(my_loc() + "/data/all_trna_structure_seqs.dat", "w")
 
-    for pdb in glob.glob("/Users/amw579/Dropbox/trnas/*.pdb"):
+    for pdb in glob.glob(my_loc() + "/trnas/*.pdb"):
         print(pdb)
-        seq = match_pdb_to_best_sequence(pdb, sequences)
+        seq = match_pdb_to_best_sequence(pdb, MSA)
         if seq is None:
             f.write("{}\t{} UNALIGNED_PDB_SEQ\n".format(pdb, modomics_from_pdb(pdb)))
             continue
-        f.write("{}\t{} ALIGNED_TO\n".format(pdb, seq))
-        f.write("{}\t{} PDB_SEQ\n".format(pdb, import_dash_pattern(seq, modomics_from_pdb(pdb))))
+        f.write("{}\t{} ALIGNED_TO\n".format(pdb, seq[0][1]))
+        f.write("{}\t{} PDB_SEQ\n".format(pdb, import_dash_pattern(seq[0][1], modomics_from_pdb(pdb))))
 
         #print(pdb, seq)
         #print(pdb, import_dash_pattern(seq, modomics_from_pdb(pdb)))
@@ -485,23 +517,25 @@ def examine(sequences):
 def main(args):
     if args.pdb is not None: 
         pass
-    templates = get_seqs("all_trna_structure_seqs.dat")
     
-    with open(args.seq_file) as f:
+    import os
+    if not os.path.exists(my_loc() + "/data/all_trna_structure_seqs.dat"):
+        print("Regenerating aligned template library")
+        align_template_library(my_loc() + "/data/all_trna.mfa")
+
+    templates = get_seqs(my_loc() + "/data/all_trna_structure_seqs.dat")
+
+    with open(args.seq_file[0]) as f:
         tgt_seq = f.readlines()[0].strip()
 
-    # Temporarily using this script to get alignments for our new library, 
-    # below is commented
     pdb_seq_list = match_seq_to_best_template_seq(tgt_seq, templates)
-    # Whatever the new sequence is, it's auto-aligned to seq and so we know how
-    # to set up a denovo job for it.
     
     # Maybe there are many returned! That's cool; do them all
     for p, s in pdb_seq_list:
         if 'a' in tgt_seq and 'g' in tgt_seq and 'c' in tgt_seq and 'u' in tgt_seq:
             # annotated seq format, must translate first.
             tgt_seq = ann_to_mod(tgt_seq)
-        remodel_new_sequence(s, tgt_seq, p, nstruct)
+        remodel_new_sequence(s, tgt_seq, p, args.nstruct)
 
 
 """
@@ -515,6 +549,7 @@ if __name__ == '__main__':
     parser.add_argument('--pdb', nargs='?', help='template (if omitted, use shipped library')
     parser.add_argument('--mapfile', nargs='?', help='electron density mapfile associated with template (useful for keeping minimization close)')
     parser.add_argument('--seq_file', nargs=1, help='target sequence file in modomics format')
+    parser.add_argument('--nstruct', nargs='?', help='number of structures per template', default=1)
 
     args = parser.parse_args()
     main(args)
