@@ -69,7 +69,8 @@ def get_seqs(fn):
     lines = []
     with open(fn) as f:
         lines = f.readlines()
-    sequences = {l.strip().split()[0]: l.strip().split()[1] for l in lines if "ALIGNED_TO" in l }
+    #sequences = {l.strip().split()[0]: l.strip().split()[1] for l in lines if "ALIGNED_TO" in l }
+    sequences = {l.strip().split()[0]: l.strip().split()[1] for l in lines if "PDB_SEQ" in l }
     #print(sequences)
     return sequences
 
@@ -262,6 +263,41 @@ def thread_sequence_on_pdb(seq, pdb, mapfile):
 
 
 
+def trim_pdb_to_res(pdb, new_pdb, pos):
+    def nres(pdb):
+        with open(pdb) as f:
+            return len([ 0 for l in f.readlines() if ' P  ' in l])
+
+    def atom(line):
+        return line[12:16]
+    def res(line):
+        return line[22:26]
+    lines = []
+    with open(pdb) as f:
+        lines = f.readlines()
+    # Renumber the PDB, get a dict from seqpos => lines
+    # write all in pos
+    subprocess.run(['cp', pdb, new_pdb])
+    print("I think there are {} res".format(nres(new_pdb)))
+    subprocess.run(['renumber_pdb_in_place.py', new_pdb, "A:1-{}".format(nres(new_pdb))])
+    with open(new_pdb) as f:
+        lines = f.readlines()
+    res_to_line_dict = { x: [l for l in lines if int(res(l).strip()) == x and int(res(l).strip()) in pos] for x in pos }
+    with open(new_pdb, "w") as f:
+        for x in pos:
+            for l in res_to_line_dict[x]:
+                f.write(l)
+        #res_index = 1
+        #lineres = None
+        #for line in lines:
+        #    if line[0:4] != "ATOM" and line[0:6] != "HETATM": continue
+        #    #print(atom(line))
+        #    #print(line, res_index)
+        #    if res_index in pos: f.write(line)
+        #    if res(line) != lineres:
+        #        if lineres is not None: res_index += 1
+        #        lineres = res(line)
+
 
 
 
@@ -280,8 +316,11 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
         for c in common_color_set: common_structure.remove(c)
         return common_structure
 
-    print(seq)
-    print(tgt_seq)
+    print("PDB:", pdb)
+    print("MOD:", modomics_from_pdb(pdb))
+    print("\nModeling from seq to target sequence:")
+    print("SEQ:", seq)
+    print("TGT:", tgt_seq)
     
     # Deal with one issue: reading an absolute path template library, copy to PWD.
     old_pdb = pdb
@@ -290,6 +329,7 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
         subprocess.run(['cp', pdb, './template.pdb'])
         old_pdb = pdb[-10:-4]
         pdb = 'template.pdb'
+    print("MOD:", modomics_from_pdb(pdb))
 
     mismatches = []
     for i, (c1, c2) in enumerate(zip(seq, tgt_seq)):
@@ -300,7 +340,11 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
     for mm in mismatches:
         if mm in common_structure:
             common_structure = remove_if_of_common_color(mm, common_structure)
-    print("So, common structure remaining is", common_structure)
+    print("So, common structure remaining (in alignment numbering) is", common_structure)
+
+    # Sequence given common structure remaining
+    print("SEQ:", "".join([c if i in common_structure else '-' for i,c in enumerate(seq) ]))
+    print("TGT:", "".join([c if i in common_structure else '-' for i,c in enumerate(tgt_seq) ]))
 
 
     # Trim input PDB containing only common_structure residues
@@ -311,41 +355,6 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
         pdb_pos2align_pos[pdb_pos] = align_pos
         pdb_pos += 1
     align_pos2pdb_pos = dict(zip(pdb_pos2align_pos.values(), pdb_pos2align_pos.keys()))
-
-    def trim_pdb_to_res(pdb, new_pdb, pos):
-        def nres(pdb):
-            with open(pdb) as f:
-                return len([ 0 for l in f.readlines() if ' P  ' in l])
-
-        def atom(line):
-            return line[12:16]
-        def res(line):
-            return line[22:26]
-        lines = []
-        with open(pdb) as f:
-            lines = f.readlines()
-        # Renumber the PDB, get a dict from seqpos => lines
-        # write all in pos
-        subprocess.run(['cp', pdb, new_pdb])
-        print("I think there are {} res".format(nres(new_pdb)))
-        subprocess.run(['renumber_pdb_in_place.py', new_pdb, "A:1-{}".format(nres(new_pdb))])
-        with open(new_pdb) as f:
-            lines = f.readlines()
-        res_to_line_dict = { x: [l for l in lines if int(res(l).strip()) == x and int(res(l).strip()) in pos] for x in pos }
-        with open(new_pdb, "w") as f:
-            for x in pos:
-                for l in res_to_line_dict[x]:
-                    f.write(l)
-            #res_index = 1
-            #lineres = None
-            #for line in lines:
-            #    if line[0:4] != "ATOM" and line[0:6] != "HETATM": continue
-            #    #print(atom(line))
-            #    #print(line, res_index)
-            #    if res_index in pos: f.write(line)
-            #    if res(line) != lineres:
-            #        if lineres is not None: res_index += 1
-            #        lineres = res(line)
 
     pdb_pos_trim = [align_pos2pdb_pos[c] for c in common_structure if c in align_pos2pdb_pos.keys()]
     print(pdb_pos_trim)
