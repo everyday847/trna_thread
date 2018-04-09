@@ -127,6 +127,39 @@ def ann_to_mod(ann_seq):
 
     return mod_seq
 
+
+def dashed(positions, chain):
+    """
+    Take a set of positions (i.e., 1 2 3 7 8 9) and a chain ("A"), and produce a
+    repr like "A:1-3 A:7-9"
+    """
+ 
+    #print(positions)
+    acc_start = None
+    acc_end = None
+    numbering = ""
+    for p in range(1, max(positions)+1):
+        #print("examining", p)
+        if p in positions and p != max(positions):
+            #print("\tfound in positions", p)
+            if acc_start is None:
+                acc_start = p
+            else:
+                acc_end = p
+            #print("now acc_start acc_end", acc_start, acc_end)
+        elif p != max(positions):
+            if acc_start is not None and acc_end is not None:
+                numbering += "{ch}:{start}-{end} ".format(ch=chain, start=acc_start, end=acc_end)
+                acc_start = None
+                acc_end = None
+        else:
+            if p in positions:
+                acc_end = p
+            numbering += "{ch}:{start}-{end} ".format(ch=chain, start=acc_start, end=acc_end)
+
+    return numbering
+
+
 ###
 #   Sequence alignment scoring
 ###
@@ -401,31 +434,7 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
     # We would have to check that this is robust to (say) T:10-85
     new_trimmed = [old_seq2new_seq[p] for p in pdb_pos_trim]
 
-    def dashed(positions, chain):
-        #print(positions)
-        acc_start = None
-        acc_end = None
-        numbering = ""
-        for p in range(1, max(positions)+1):
-            #print("examining", p)
-            if p in positions and p != max(positions):
-                #print("\tfound in positions", p)
-                if acc_start is None:
-                    acc_start = p
-                else:
-                    acc_end = p
-                #print("now acc_start acc_end", acc_start, acc_end)
-            elif p != max(positions):
-                if acc_start is not None and acc_end is not None:
-                    numbering += "{ch}:{start}-{end} ".format(ch=chain, start=acc_start, end=acc_end)
-                    acc_start = None
-                    acc_end = None
-            else:
-                if p in positions:
-                    acc_end = p
-                numbering += "{ch}:{start}-{end} ".format(ch=chain, start=acc_start, end=acc_end)
 
-        return numbering
 
     numbering = dashed(new_trimmed, 'A')
     print(numbering)
