@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-import sys, subprocess
+import sys, subprocess, mypy
+from typing import Dict, List, Tuple
 
 """
 Homology modeling of novel tRNA sequences expressed in Modomics's extended
@@ -39,7 +40,7 @@ single-letter-code nomenclature.
 #   Data file manipulation: reading in sequence data and PDB file references.
 ###
 
-def exe(name):
+def exe(name: str) -> str:
     """
     For distribution, once I've merged into master: look for ROSETTA in 
     os.environ and return exe path based on that.
@@ -50,28 +51,41 @@ def exe(name):
     else:
         return "/Users/amw579/dev_ui/Rosetta/main/source/bin/" + name
 
-def my_loc():
+def my_loc() -> str:
     import os
     return os.path.dirname(os.path.realpath(__file__))
 
-def get_seqs_mfa(fn):
+class Sequence:
+    def __init__(self, sequence: str, secstruct=
+        ".(((((((..((((...........)))).(((((.......)))))........................(((((.......))))))))))))...."):
+        self.sequence = sequence
+        self.secstruct = secstruct
+
+    def __repr__(self) -> str:
+        return "SEQUENCE: {}\nSECSTRUCT: {}\n".format(self.sequence, self.secstruct)
+
+def get_seqs_mfa(fn: str) -> List[Tuple[str, Sequence]]:
     """
     Get sequences out of the tRNAdb mfa
     """
     lines = []
     with open(fn) as f:
         lines = f.readlines()
-    sequences = [l.strip() for l in lines[1::2]]
+    sequences = [('', Sequence(l.strip(),
+        ".(((((((..((((...........)))).(((((.......)))))........................(((((.......))))))))))))...."))
+        for l in lines[1::2]]
     print(len(sequences), "sequences")
+    print("At creation:")
+    print(sequences[0])
     return sequences
 
-def get_seqs(fn):
+def get_seqs(fn: str) -> List[Tuple[str, Sequence]]:
     lines = []
     with open(fn) as f:
         lines = f.readlines()
     #sequences = {l.strip().split()[0]: l.strip().split()[1] for l in lines if "ALIGNED_TO" in l }
-    sequences = {l.strip().split()[0]: l.strip().split()[1] for l in lines if "PDB_SEQ" in l }
-    #print(sequences)
+    sequences = [(l.strip().split()[0], Sequence(l.strip().split()[1]))
+        for l in lines if "PDB_SEQ" in l]
     return sequences
 
 ###
@@ -93,26 +107,34 @@ tlc_to_mod = { #                                                                
                "1PU": ']', "MPU": 'Z' }
 mod_to_tlc = dict(zip(tlc_to_mod.values(), tlc_to_mod.keys()))
 
-def mod_from_tlc(tlc):
+def mod_from_tlc(tlc: str) -> str:
     """
     Translates modomics single letter codes from 3LCs
     """
+
     if tlc in tlc_to_mod:
         return tlc_to_mod[tlc]
 
     print("Unrecognized", tlc)
     exit()
 
-def modomics_from_pdb(pdb):
+def modomics_from_pdb(pdb: str) -> str:
+    """
+    Doesn't pair with secstruct (yet). dssr?
+    """
+
     pdblines = []
     modomics_seq = ""
     with open(pdb) as f:
         pdblines = f.readlines()
     for l in pdblines:
         if " C4'" in l: modomics_seq += mod_from_tlc(l[17:20])
-    return modomics_seq
 
-def ann_to_mod(ann_seq):
+    # Replace with Rosetta-native SS determination?
+
+    return Sequence(modomics_seq, '.'*len(modomics_seq))
+
+def ann_to_mod(ann_seq: str) -> str:
     mod_seq = ""
     for c in ann_seq:
         if c == 'a': mod_seq += 'A'
@@ -127,8 +149,17 @@ def ann_to_mod(ann_seq):
 
     return mod_seq
 
+def annotated_seq_of(mod_seq: str) -> str:
+    ann_seq = ""
+    for c in mod_seq:
+        if c == 'A': ann_seq += 'a'
+        elif c == 'C': ann_seq += 'c'
+        elif c == 'G': ann_seq += 'g'
+        elif c == 'U': ann_seq += 'u'
+        else: ann_seq += 'X[' + mod_to_tlc[c] + ']'
+    return ann_seq
 
-def dashed(positions, chain):
+def dashed(positions: List[int], chain: str) -> str:
     """
     Take a set of positions (i.e., 1 2 3 7 8 9) and a chain ("A"), and produce a
     repr like "A:1-3 A:7-9"
@@ -164,7 +195,7 @@ def dashed(positions, chain):
 #   Sequence alignment scoring
 ###
 
-def simple_match(seq1, seq2):
+def simple_match(_seq1: Sequence, _seq2: Sequence) -> int:
     """
     Assumes seq1 and seq2 are aligned already (i.e., a 'static score').
     Rewards similarity in length, letter matches, purine matches, and U variant
@@ -174,6 +205,8 @@ def simple_match(seq1, seq2):
     Ooh, consider not penalizing complementary WC mismatches within helices?
     would need SS
     """
+    seq1 = _seq1.sequence
+    seq2 = _seq2.sequence
 
     score = len(seq1) - len(seq2)
     for c1, c2 in zip(seq1, seq2):
@@ -203,29 +236,25 @@ DOMAIN ANALYSIS:
 # This string 'colors' bits of tRNA structure that should be rebuilt together.
 trna_structure_coloring = "P(((((((VV((((DDDDD..DDDD))))V(((((SSSSSSS)))))VVVVVVVVVVVVVVVVVVVVVVVV(((((.....DD))))))))))))PPPP"
 
-def match_seq_to_best_template_seq(tgt_seq, templates):
-    
+def match_seq_to_best_template_seq(tgt_seq: Sequence, templates: List[Tuple[str, Sequence]]) -> List[Tuple[str, Sequence]]:
     print("There are in total", len(templates))
     # Filter sequences for those of same true length. If 1, done.
     # If zero, quit entirely; no point.
-    new_seqs = [(p,s) for (p,s) in templates.items()]
+    print(templates[0])
+    new_seqs = [t for t in templates]
     ii = 0
-    #while len(new_seqs) == 0:
-    #    new_seqs = [(p,s) for (p,s) in templates.items() if abs(len(tgt_seq.replace('-', '')) - len(s.replace('-', ''))) < ii]
-    #    ii += 1
-    #for _, seq in new_seqs:
-    #    print(seq)
-    #    print(tgt_seq)
-    #print("There are length-matched", len(new_seqs))
-    #if len(new_seqs) == 0: return None#exit(0)
 
-    pdb_len = len(new_seqs[0][1].replace('-',''))
+    print(new_seqs[0])
+    pdb_len = len(new_seqs[0][1].sequence.replace('-',''))
 
     # Sort sequences by number of matching characters (exact + purine/pyr+TP/U),
     # take best count only. If 1, done.
-    seq_matching_to_pdb = { s: simple_match(tgt_seq, s.replace('-','')) for _, s in new_seqs }
+
+    # HOLY FUCK TRY SOME ALIGNMENTS YOU MORON
+
+    seq_matching_to_pdb = { s.sequence: simple_match(tgt_seq, s) for _, s in new_seqs }
     best_score = max(seq_matching_to_pdb.values())
-    new_seqs = [(p, s) for (p, s) in new_seqs if seq_matching_to_pdb[s] == best_score]
+    new_seqs = [(p, s) for (p, s) in new_seqs if seq_matching_to_pdb[s.sequence] == best_score]
     print("There are, for top seq exact-match", len(new_seqs), "(each scores {score} out of {length})".format(score=best_score, length=pdb_len))
     for p,s in new_seqs:
         print(p)
@@ -233,22 +262,18 @@ def match_seq_to_best_template_seq(tgt_seq, templates):
 
     return new_seqs
 
-def match_pdb_to_best_sequence(pdb, MSA_file):
+def match_pdb_to_best_sequence(pdb: str, MSA_file: str) -> List[Tuple[str, Sequence]]:
     """
     Get FASTA information from provided PDB. To which sequence is it closest? Pick it.
     """
 
     MSA_seqs = get_seqs_mfa(MSA_file)
-    # Has to have some dummy key value; must be unique.
-    templates = {s: s for s in MSA_seqs}
     modomics_seq = modomics_from_pdb(pdb)
-    print("Attempting to align", modomics_seq, "to MSA templates length", len(templates))
-    return match_seq_to_best_template_seq(modomics_from_pdb(pdb), templates)
+    print("Attempting to align", modomics_seq, "to MSA templates length", len(MSA_seqs))
+    return match_seq_to_best_template_seq(modomics_from_pdb(pdb), MSA_seqs)
 
 
-
-
-def thread_sequence_on_pdb(seq, pdb, mapfile):
+def thread_sequence_on_pdb(seq: str, pdb: str, mapfile: str) -> str:
     """
     Threads a sequence using rna_thread_and_minimize. Could use pyrosetta for this, I imagine.
     Currently uses an un-translated modomics sequence; could imagine using annotated sequence
@@ -295,16 +320,22 @@ def thread_sequence_on_pdb(seq, pdb, mapfile):
     return pdb.replace('.pdb', '_0001.pdb')
 
 
-
-def trim_pdb_to_res(pdb, new_pdb, pos):
-    def nres(pdb):
+def atom(line: str) -> str:
+    return line[12:16]
+def res(line: str) -> str:
+    return line[22:26]
+ 
+def trim_pdb_to_res(pdb: str, new_pdb: str, pos: List[int]) -> None:
+    def nres(pdb: str) -> int:
+        n = 0
+        lastnum = None
         with open(pdb) as f:
-            return len([ 0 for l in f.readlines() if ' P  ' in l])
+            for l in f.readlines():
+                if res(l) != lastnum:
+                    lastnum = res(l)
+                    n += 1
+            #return len([ 0 for l in f.readlines() if ' P  ' in l])
 
-    def atom(line):
-        return line[12:16]
-    def res(line):
-        return line[22:26]
     lines = []
     with open(pdb) as f:
         lines = f.readlines()
@@ -313,47 +344,98 @@ def trim_pdb_to_res(pdb, new_pdb, pos):
     subprocess.run(['cp', pdb, new_pdb])
     print("I think there are {} res".format(nres(new_pdb)))
     subprocess.run(['renumber_pdb_in_place.py', new_pdb, "A:1-{}".format(nres(new_pdb))])
+    exit()
     with open(new_pdb) as f:
         lines = f.readlines()
     res_to_line_dict = { x: [l for l in lines if int(res(l).strip()) == x and int(res(l).strip()) in pos] for x in pos }
+    for k in res_to_line_dict.keys():
+        for l in res_to_line_dict[k]:
+            print("{}: {}".format(k, l.strip()))
+    #exit()
     with open(new_pdb, "w") as f:
         for x in pos:
             for l in res_to_line_dict[x]:
                 f.write(l)
-        #res_index = 1
-        #lineres = None
-        #for line in lines:
-        #    if line[0:4] != "ATOM" and line[0:6] != "HETATM": continue
-        #    #print(atom(line))
-        #    #print(line, res_index)
-        #    if res_index in pos: f.write(line)
-        #    if res(line) != lineres:
-        #        if lineres is not None: res_index += 1
-        #        lineres = res(line)
 
+def cull_LINKs(in_pdb: str, out_pdb: str) -> None:
+    with open(in_pdb) as infile:
+        with open(out_pdb, "w") as outfile:
+            for line in infile.readlines():
+                if line[0:4] == "ATOM" or line[0:6] == "HETATM":
+                    outfile.write(line)
 
-
-
-def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
+def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) -> None:
     """
-    This is the main workhorse. We need to figure out a path from A to B. How do we do this?
-    1. Calculate common structure. This is more restrictive than 'common residues' because we have to eliminate whole loops
-    or loop segments after mutation.
-    2. Trim input PDB to common structure. Figure out which sequence positions this is.
-    3. Thread new sequence using above effort onto common structure. [How to restrict minimization?]
+    This is the main workhorse. We need to figure out a path from A to B. How do
+    we do this?
+    1. Calculate common structure. This is more restrictive than 'common 
+    residues' because we have to eliminate whole loops or loop segments after
+    mutation.
+    2. Trim input PDB to common structure. Figure out which sequence positions 
+    this is.
+    3. Thread new sequence using above effort onto common structure. [How to 
+    restrict minimization?]
     4. 
     """
     
-    def remove_if_of_common_color(mm, common_structure, trna_structure_coloring=trna_structure_coloring):
-        common_color_set = [d for d in range(len(trna_structure_coloring)) if trna_structure_coloring[d] == trna_structure_coloring[mm]]
-        for c in common_color_set: common_structure.remove(c)
+    def remove_if_of_common_color(mm: int, common_structure: List[int], trna_structure_coloring=trna_structure_coloring) -> List[int]:
+        """
+        NOTE: 'common color' logic applies to letters in the 'structure 
+        coloring' string, not to ss characters, handled separately. """
+
+        def all_bp_partners(ss_str: str) -> Dict[int, int]:
+            """
+            We push back on a dict-list (per char type), then when we find a
+            complement we pop -- giving a pair of popped + current.
+            """
+            final = {}
+            paired = {'(': [], '[': [], '{': []}
+            compl = {'[': ']', ']': '[', '(': ')', ')': '(', '{': '}', '}': '{'}
+            for i, c in ss_str:
+                if c == '.': continue
+                if c in paired.keys(): paired[c].append(i)
+                if c == ')' or c == ']' or c == '}':
+                    pair = paired[compl[c]].pop()
+                    final[pair] = i
+                    final[i] = pair
+            return final
+
+
+        def bp_partner(pos: List[int], ss_str: str) -> int:
+            return all_bp_partners(ss_str)[pos]
+
+            def nl(pos: int, ss_str: str) -> int:
+                compl = {'[': ']', ']': '[', '(': ')', ')': '(', '{': '}', '}': '{'}
+
+                cur_nl = 0
+                for i, c in enumerate(ss_str):
+                    if i == pos: return cur_nl + 1
+                    if c == ss_str[pos]: cur_nl += 1
+                    if c == compl[ss_str[pos]]: cur_nl -= 1
+
+            ss_char = ss_str[pos]
+            nesting_level = nl(pos, ss_str)
+
+
+
+        bp_chars = ['(', ')', '[', ']', '{', '}']
+        common_color_set = []
+        if trna_structure_coloring[mm] == '.': 
+            common_color_set = [mm]
+        elif trna_structure_coloring[mm] in bp_chars:
+            common_color_set = [mm, bp_partner(mm, trna_structure_coloring)]
+        else:
+            common_color_set = [d for d in range(len(trna_structure_coloring)) 
+                if trna_structure_coloring[d] == trna_structure_coloring[mm]]
+        
+        for c in common_color_set: 
+            if c in common_structure: common_structure.remove(c)
         return common_structure
 
     print("PDB:", pdb)
-    print("MOD:", modomics_from_pdb(pdb))
     print("\nModeling from seq to target sequence:")
-    print("SEQ:", seq)
-    print("TGT:", tgt_seq)
+    print("SEQ:\n", seq)
+    print("TGT:\n", tgt_seq)
     
     # Deal with one issue: reading an absolute path template library, copy to PWD.
     old_pdb = pdb
@@ -362,39 +444,56 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
         subprocess.run(['cp', pdb, './template.pdb'])
         old_pdb = pdb[-10:-4]
         pdb = 'template.pdb'
-    print("MOD:", modomics_from_pdb(pdb))
 
     mismatches = []
-    for i, (c1, c2) in enumerate(zip(seq, tgt_seq)):
+    for i, (c1, c2) in enumerate(zip(seq.sequence, tgt_seq.sequence)):
         if c1 != c2 and ((c1 == '-' and c2 != '-') or (c2 == '-' and c1 != '-')):
             print("mismatch at {pos}".format(pos=i))
             mismatches.append(i)
-    common_structure = [i for i in range(len(seq))]
+    common_structure = [i for i in range(len(seq.sequence))]
     for mm in mismatches:
         if mm in common_structure:
             common_structure = remove_if_of_common_color(mm, common_structure)
     print("So, common structure remaining (in alignment numbering) is", common_structure)
-
+    print("COL:", trna_structure_coloring)
     # Sequence given common structure remaining
-    print("SEQ:", "".join([c if i in common_structure else '-' for i,c in enumerate(seq) ]))
-    print("TGT:", "".join([c if i in common_structure else '-' for i,c in enumerate(tgt_seq) ]))
+    print("SEQ:", "".join([c if i in common_structure else '-' for i,c in enumerate(seq.sequence) ]))
+    print("TGT:", "".join([c if i in common_structure else '-' for i,c in enumerate(tgt_seq.sequence) ]))
 
+    #258 >4ycp_B nts=60 [whole]
+    #          5    11   16   21   26   31      36   41 44                  46 48                   69
+    #259       GCGUAGUUCAAUUGGUAGAGCACCGGUC  ---&AAAACCGGG                  &G &UGGGAGUUCGAGUCUCUCCGCCnnnnCCA
+    #260       (((..((((.....[..)))).(((((.  ---&...))))).                  &. &.(((((..]....)))))))).
+    #    "P(((((((VV((((DDDDD..DDDD))))V(((((SSSSSSS)))))VVVVVVVVVVVVVVVVVVVVVVVV(((((.....DD))))))))))))PPPP"
+    #     -GGGGGCU..UAGCUCAGUGGUAGAGCAUUGGAPUCCA+AUCCAGGG-------------------GUCGUAGGUUCAAUCCCUGCAGCUCUCA--- ALIGNED_TO
+    #     -GCGUAGU..UCAAUUGGUAGAGCACCGGUCAAAACCGGGGUGGGAG-------------------UUCGAGUCUCUCCGCCnnnnnnn-------- PDB_SEQ
+    #/Users/amw579/programs/trna_thread/trnas/4ycp_B.pdb -GGGGGCUUAGCUCAGU--GGU--AGAGCAUUGGAPUCCA+AUCCAGGG-------------------GUCGUAGGUUCAAUCCCUGCAGCUCUCA--- ALIGNED_TO
+    #/Users/amw579/programs/trna_thread/trnas/4ycp_B.pdb -    GCGUAGUUCAAUU GGU--AGAGCACCGGUCAAAACCGGGGUGGGAG----------------UUCGAGUCUCUCCGCCnnnnnnn-------- PDB_SEQ
 
+    #>4ycp_B.pdb  B:5-32 B:36-44 B:46 B:48-69
     # Trim input PDB containing only common_structure residues
     pdb_pos2align_pos = {}
     pdb_pos = 1
-    for align_pos in range(len(seq)):
-        if seq[align_pos] == '-': continue
+    for align_pos in range(len(seq.sequence)):
+        if seq.sequence[align_pos] == '-': continue
+        if seq.sequence[align_pos] != modomics_from_pdb(pdb).sequence[pdb_pos-1]: 
+            #pdb_pos += 1
+            continue
         pdb_pos2align_pos[pdb_pos] = align_pos
         pdb_pos += 1
     align_pos2pdb_pos = dict(zip(pdb_pos2align_pos.values(), pdb_pos2align_pos.keys()))
+    print("MOD:", modomics_from_pdb(pdb))
+    print(pdb_pos2align_pos)
 
     pdb_pos_trim = [align_pos2pdb_pos[c] for c in common_structure if c in align_pos2pdb_pos.keys()]
     print(pdb_pos_trim)
+    print("MOD:", "".join([c if i+1 in pdb_pos_trim else '-' for i,c in enumerate(modomics_from_pdb(pdb).sequence) ]))
+    #exit()
+    print("Eventual sequence length will be", len([c for c in tgt_seq.sequence if c != '-']))
     trim_pdb_to_res(pdb, pdb.replace('.pdb', '_trimmed.pdb'), pdb_pos_trim)
 
     # Thread them to their new identities.
-    tgt_seq_for_thread = "".join([tgt_seq[c] for c in common_structure])
+    tgt_seq_for_thread = "".join([tgt_seq.sequence[c] for c in common_structure])
 
     command = [exe("rna_thread_and_minimize"),
         "-s", pdb.replace('.pdb', '_trimmed.pdb'), 
@@ -416,11 +515,7 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
     
     #subprocess.run(["mv", pdb.replace('.pdb', '_trimmed_0001.pdb'), "input.pdb"])
     # Remove LINK records. They will be misleading because of a bug in the threading code.
-    with open(pdb.replace('.pdb', '_trimmed_0001.pdb')) as infile:
-        with open("{}_input.pdb".format(old_pdb), "w") as outfile:
-            for line in infile.readlines():
-                if line[0:4] == "ATOM" or line[0:6] == "HETATM":
-                    outfile.write(line)
+    cull_LINKs(pdb.replace('.pdb', '_trimmed_0001.pdb'), "{}_input.pdb".format(old_pdb))
 
     old_seq2new_seq = {}
     oi, ni = 0, 0
@@ -447,17 +542,6 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
     subprocess.run(command)
 
     # Create the overall fasta.
-
-    def annotated_seq_of(mod_seq):
-        ann_seq = ""
-        for c in mod_seq:
-            if c == 'A': ann_seq += 'a'
-            elif c == 'C': ann_seq += 'c'
-            elif c == 'G': ann_seq += 'g'
-            elif c == 'U': ann_seq += 'u'
-            else: ann_seq += 'X[' + mod_to_tlc[c] + ']'
-        return ann_seq
-
     with open("target.fasta", "w") as f:
         print(tgt_seq)
         print(tgt_seq.replace('-',''))
@@ -485,21 +569,21 @@ def remodel_new_sequence(seq, tgt_seq, pdb, mapfile=None):
 
 
 
-def import_dash_pattern(dashed_seq, other_seq):
+def import_dash_pattern(dashed_seq, other_seq: str):
     """
     Put all the dashes from dashed_seq into other_seq.
     Try to be a LITTLE clever here. We don't want to just shove every in there
     in case there is an insertion. Maybe we should test each insertion to see
     if it improves alignment.
     """
-    def dash_positions(dashed_seq):
+    def dash_positions(dashed_seq: str) -> List[int]:
         return [i for (i, c) in enumerate(dashed_seq) if c == '-']
 
-    def seqs_with_dashes(dashes, seq):
-        seqs = [seq]
+    def seqs_with_dashes(dashes: List[int], seq_str: str) -> List[str]:
+        seqs = [seq_str]
         for i in range(len(dashes)):
-            seq = seq[0:dashes[i]] + '-' + seq[dashes[i]:]
-            seqs.append(seq)
+            seq_str = seq_str[0:dashes[i]] + '-' + seq_str[dashes[i]:]
+            seqs.append(seq_str)
 
         return seqs
 
@@ -507,7 +591,7 @@ def import_dash_pattern(dashed_seq, other_seq):
     seqs = seqs_with_dashes(dash_pos, other_seq)
     score = None
     for seq in seqs:
-        newscore = simple_match(seq, dashed_seq)
+        newscore = simple_match(Sequence(seq), Sequence(dashed_seq))
         #print(newscore, seq)
         if score is None or newscore > score:
             score = newscore
@@ -523,7 +607,7 @@ def import_dash_pattern(dashed_seq, other_seq):
 
     return other_seq + (len(dashed_seq) - len(other_seq)) * '-'
 
-def align_template_library(MSA):
+def align_template_library(MSA: str) -> None:
     """
     This was used to set up all the actual trna structure library sequences.
     """
@@ -534,10 +618,10 @@ def align_template_library(MSA):
         print(pdb)
         seq = match_pdb_to_best_sequence(pdb, MSA)
         if seq is None:
-            f.write("{}\t{} UNALIGNED_PDB_SEQ\n".format(pdb, modomics_from_pdb(pdb)))
+            f.write("{}\t{} UNALIGNED_PDB_SEQ\n".format(pdb, modomics_from_pdb(pdb).sequence))
             continue
-        f.write("{}\t{} ALIGNED_TO\n".format(pdb, seq[0][1]))
-        f.write("{}\t{} PDB_SEQ\n".format(pdb, import_dash_pattern(seq[0][1], modomics_from_pdb(pdb))))
+        f.write("{}\t{} ALIGNED_TO\n".format(pdb, seq[0][1].sequence))
+        f.write("{}\t{} PDB_SEQ\n".format(pdb, import_dash_pattern(seq[0][1].sequence, modomics_from_pdb(pdb).sequence)))
 
         #print(pdb, seq)
         #print(pdb, import_dash_pattern(seq, modomics_from_pdb(pdb)))
@@ -554,14 +638,16 @@ def main(args):
 
     templates = get_seqs(my_loc() + "/data/all_trna_structure_seqs.dat")
 
+    tgt_seq = Sequence("", 
+        ".(((((((..((((...........)))).(((((.......)))))........................(((((.......))))))))))))....")
     with open(args.seq_file[0]) as f:
-        tgt_seq = f.readlines()[0].strip()
+        tgt_seq.sequence = f.readlines()[0].strip()
 
     pdb_seq_list = match_seq_to_best_template_seq(tgt_seq, templates)
     
     # Maybe there are many returned! That's cool; do them all
     for p, s in pdb_seq_list:
-        if 'a' in tgt_seq and 'g' in tgt_seq and 'c' in tgt_seq and 'u' in tgt_seq:
+        if 'a' in tgt_seq.sequence and 'g' in tgt_seq.sequence and 'c' in tgt_seq.sequence and 'u' in tgt_seq.sequence:
             # annotated seq format, must translate first.
             tgt_seq = ann_to_mod(tgt_seq)
         remodel_new_sequence(s, tgt_seq, p, args.nstruct)
