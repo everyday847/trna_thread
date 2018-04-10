@@ -57,22 +57,23 @@ def my_loc() -> str:
 
 class Sequence:
     def __init__(self, sequence: str, secstruct=
-        ".(((((((..((((...........)))).(((((.......)))))........................(((((.......))))))))))))...."):
+        ".(((((((..((((...........)))).(((((.......)))))........................(((((.......))))))))))))....") -> None:
         self.sequence = sequence
         self.secstruct = secstruct
 
     def __repr__(self) -> str:
         return "SEQUENCE: {}\nSECSTRUCT: {}\n".format(self.sequence, self.secstruct)
 
+    def __len__(self) -> int: return len(self.sequence)
+
 def get_seqs_mfa(fn: str) -> List[Tuple[str, Sequence]]:
     """
     Get sequences out of the tRNAdb mfa
     """
-    lines = []
+    lines = [] # type: List[str]
     with open(fn) as f:
         lines = f.readlines()
-    sequences = [('', Sequence(l.strip(),
-        ".(((((((..((((...........)))).(((((.......)))))........................(((((.......))))))))))))...."))
+    sequences = [('', Sequence(l.strip()))
         for l in lines[1::2]]
     print(len(sequences), "sequences")
     print("At creation:")
@@ -80,7 +81,7 @@ def get_seqs_mfa(fn: str) -> List[Tuple[str, Sequence]]:
     return sequences
 
 def get_seqs(fn: str) -> List[Tuple[str, Sequence]]:
-    lines = []
+    lines = [] # type: List[str]
     with open(fn) as f:
         lines = f.readlines()
     #sequences = {l.strip().split()[0]: l.strip().split()[1] for l in lines if "ALIGNED_TO" in l }
@@ -118,12 +119,12 @@ def mod_from_tlc(tlc: str) -> str:
     print("Unrecognized", tlc)
     exit()
 
-def modomics_from_pdb(pdb: str) -> str:
+def modomics_from_pdb(pdb: str) -> Sequence:
     """
     Doesn't pair with secstruct (yet). dssr?
     """
 
-    pdblines = []
+    pdblines = [] # type: List[str]
     modomics_seq = ""
     with open(pdb) as f:
         pdblines = f.readlines()
@@ -166,6 +167,7 @@ def dashed(positions: List[int], chain: str) -> str:
     """
  
     #print(positions)
+    positions = sorted(positions)
     acc_start = None
     acc_end = None
     numbering = ""
@@ -175,18 +177,23 @@ def dashed(positions: List[int], chain: str) -> str:
             #print("\tfound in positions", p)
             if acc_start is None:
                 acc_start = p
-            else:
-                acc_end = p
-            #print("now acc_start acc_end", acc_start, acc_end)
+            acc_end = p
+            print("now acc_start acc_end", acc_start, acc_end)
         elif p != max(positions):
             if acc_start is not None and acc_end is not None:
-                numbering += "{ch}:{start}-{end} ".format(ch=chain, start=acc_start, end=acc_end)
+                if acc_start != acc_end:
+                    numbering += "{ch}:{start}-{end} ".format(ch=chain, start=acc_start, end=acc_end)
+                else:
+                    numbering += "{ch}:{only} ".format(ch=chain, only=acc_start)
                 acc_start = None
                 acc_end = None
         else:
             if p in positions:
                 acc_end = p
-            numbering += "{ch}:{start}-{end} ".format(ch=chain, start=acc_start, end=acc_end)
+            if acc_start is None:
+                numbering += "{ch}:{only} ".format(ch=chain, only=acc_end)
+            else:
+                numbering += "{ch}:{start}-{end} ".format(ch=chain, start=acc_start, end=acc_end)
 
     return numbering
 
@@ -195,7 +202,7 @@ def dashed(positions: List[int], chain: str) -> str:
 #   Sequence alignment scoring
 ###
 
-def simple_match(_seq1: Sequence, _seq2: Sequence) -> int:
+def simple_match(the_seq1: Sequence, the_seq2: Sequence, quiet=True) -> int:
     """
     Assumes seq1 and seq2 are aligned already (i.e., a 'static score').
     Rewards similarity in length, letter matches, purine matches, and U variant
@@ -205,10 +212,10 @@ def simple_match(_seq1: Sequence, _seq2: Sequence) -> int:
     Ooh, consider not penalizing complementary WC mismatches within helices?
     would need SS
     """
-    seq1 = _seq1.sequence
-    seq2 = _seq2.sequence
+    seq1: str = the_seq1.sequence
+    seq2: str = the_seq2.sequence
 
-    score = len(seq1) - len(seq2)
+    score: int = (len(seq1) - len(seq2))*100
     for c1, c2 in zip(seq1, seq2):
         if c1 == c2: score += 5
         else:
@@ -222,7 +229,11 @@ def simple_match(_seq1: Sequence, _seq2: Sequence) -> int:
             elif c1 == 'P' and c2 == 'U': score += 3
             elif (c1 == '-' or c2 == '-'): score -= 10
 
-    #print(score, seq1, seq2)
+    if not quiet:
+        pass
+        #print(score)
+        #print(seq1)
+        #print(seq2)
     return score
 
 
@@ -240,25 +251,30 @@ def match_seq_to_best_template_seq(tgt_seq: Sequence, templates: List[Tuple[str,
     print("There are in total", len(templates))
     # Filter sequences for those of same true length. If 1, done.
     # If zero, quit entirely; no point.
-    print(templates[0])
-    new_seqs = [t for t in templates]
-    ii = 0
+    new_seqs: List[Tuple[str, Sequence]] = [t for t in templates]
+    ii: int = 0
 
-    print(new_seqs[0])
-    pdb_len = len(new_seqs[0][1].sequence.replace('-',''))
-
-    # Sort sequences by number of matching characters (exact + purine/pyr+TP/U),
-    # take best count only. If 1, done.
+    pdb_len: int = len(new_seqs[0][1].sequence.replace('-',''))
 
     # HOLY FUCK TRY SOME ALIGNMENTS YOU MORON
 
-    seq_matching_to_pdb = { s.sequence: simple_match(tgt_seq, s) for _, s in new_seqs }
-    best_score = max(seq_matching_to_pdb.values())
-    new_seqs = [(p, s) for (p, s) in new_seqs if seq_matching_to_pdb[s.sequence] == best_score]
+    seq_matching_to_pdb: Dict[str, int] = {}
+    for _, new_seq in new_seqs:
+        #for s in import_dash_pattern(tgt_seq, new_seq.sequence):
+        #   seq_matching_to_pdb[s] = simple_match(tgt_seq, Sequence(s))
+        #s: str = import_dash_pattern(tgt_seq, new_seq.sequence)
+        s: str = import_dash_pattern(new_seq, tgt_seq.sequence)
+        #seq_matching_to_pdb[s] = simple_match(tgt_seq, Sequence(s), quiet=False)
+        seq_matching_to_pdb[s] = simple_match(Sequence(s), new_seq, quiet=False)
+
+    #seq_matching_to_pdb = {s.sequence: simple_match(tgt_seq, s) for _, s in new_seqs}
+    best_score: int = max(seq_matching_to_pdb.values())
+    new_seqs = [(p, s) for (p, s) in new_seqs if s.sequence.replace('-', '') in seq_matching_to_pdb and seq_matching_to_pdb[s.sequence.replace('-', '')] == best_score]
     print("There are, for top seq exact-match", len(new_seqs), "(each scores {score} out of {length})".format(score=best_score, length=pdb_len))
-    for p,s in new_seqs:
-        print(p)
-        print(s)
+    for (p, q) in new_seqs:
+        pass
+        #print(p)
+        #print(q)
 
     return new_seqs
 
@@ -268,7 +284,7 @@ def match_pdb_to_best_sequence(pdb: str, MSA_file: str) -> List[Tuple[str, Seque
     """
 
     MSA_seqs = get_seqs_mfa(MSA_file)
-    modomics_seq = modomics_from_pdb(pdb)
+    modomics_seq = modomics_from_pdb(pdb) # type Sequence
     print("Attempting to align", modomics_seq, "to MSA templates length", len(MSA_seqs))
     return match_seq_to_best_template_seq(modomics_from_pdb(pdb), MSA_seqs)
 
@@ -335,8 +351,9 @@ def trim_pdb_to_res(pdb: str, new_pdb: str, pos: List[int]) -> None:
                     lastnum = res(l)
                     n += 1
             #return len([ 0 for l in f.readlines() if ' P  ' in l])
+        return n
 
-    lines = []
+    lines = [] # type: List[str]
     with open(pdb) as f:
         lines = f.readlines()
     # Renumber the PDB, get a dict from seqpos => lines
@@ -344,13 +361,13 @@ def trim_pdb_to_res(pdb: str, new_pdb: str, pos: List[int]) -> None:
     subprocess.run(['cp', pdb, new_pdb])
     print("I think there are {} res".format(nres(new_pdb)))
     subprocess.run(['renumber_pdb_in_place.py', new_pdb, "A:1-{}".format(nres(new_pdb))])
-    exit()
+    #exit()
     with open(new_pdb) as f:
         lines = f.readlines()
     res_to_line_dict = { x: [l for l in lines if int(res(l).strip()) == x and int(res(l).strip()) in pos] for x in pos }
-    for k in res_to_line_dict.keys():
-        for l in res_to_line_dict[k]:
-            print("{}: {}".format(k, l.strip()))
+    #for k in res_to_line_dict.keys():
+    #    for l in res_to_line_dict[k]:
+    #        print("{}: {}".format(k, l.strip()))
     #exit()
     with open(new_pdb, "w") as f:
         for x in pos:
@@ -388,10 +405,10 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
             We push back on a dict-list (per char type), then when we find a
             complement we pop -- giving a pair of popped + current.
             """
-            final = {}
-            paired = {'(': [], '[': [], '{': []}
+            final = {} # type: Dict[int, int]
+            paired = {'(': [], '[': [], '{': []} # type: Dict[str, List[int]]
             compl = {'[': ']', ']': '[', '(': ')', ')': '(', '{': '}', '}': '{'}
-            for i, c in ss_str:
+            for i, c in enumerate(ss_str):
                 if c == '.': continue
                 if c in paired.keys(): paired[c].append(i)
                 if c == ')' or c == ']' or c == '}':
@@ -401,31 +418,15 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
             return final
 
 
-        def bp_partner(pos: List[int], ss_str: str) -> int:
-            return all_bp_partners(ss_str)[pos]
-
-            def nl(pos: int, ss_str: str) -> int:
-                compl = {'[': ']', ']': '[', '(': ')', ')': '(', '{': '}', '}': '{'}
-
-                cur_nl = 0
-                for i, c in enumerate(ss_str):
-                    if i == pos: return cur_nl + 1
-                    if c == ss_str[pos]: cur_nl += 1
-                    if c == compl[ss_str[pos]]: cur_nl -= 1
-
-            ss_char = ss_str[pos]
-            nesting_level = nl(pos, ss_str)
-
-
+        all_bp: Dict[int, int] = all_bp_partners(trna_structure_coloring)
 
         bp_chars = ['(', ')', '[', ']', '{', '}']
-        common_color_set = []
+        common_color_set: List[int] = []
         if trna_structure_coloring[mm] == '.': 
             common_color_set = [mm]
         elif trna_structure_coloring[mm] in bp_chars:
-            common_color_set = [mm, bp_partner(mm, trna_structure_coloring)]
-        else:
-            common_color_set = [d for d in range(len(trna_structure_coloring)) 
+            common_color_set = [mm, all_bp[mm]]
+        else: common_color_set = [d for d in range(len(trna_structure_coloring)) 
                 if trna_structure_coloring[d] == trna_structure_coloring[mm]]
         
         for c in common_color_set: 
@@ -519,7 +520,7 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
 
     old_seq2new_seq = {}
     oi, ni = 0, 0
-    for oc, nc in zip(seq, tgt_seq):
+    for oc, nc in zip(seq.sequence, tgt_seq.sequence):
         if oc != '-': oi += 1
         if nc != '-': ni += 1
         
@@ -544,10 +545,10 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
     # Create the overall fasta.
     with open("target.fasta", "w") as f:
         print(tgt_seq)
-        print(tgt_seq.replace('-',''))
-        print(len(tgt_seq.replace('-','')))
-        f.write(">foo A:1-{}\n".format(len(tgt_seq.replace('-', ''))))
-        f.write("{}\n".format(annotated_seq_of(tgt_seq.replace('-', ''))))
+        print(tgt_seq.sequence.replace('-',''))
+        print(len(tgt_seq.sequence.replace('-','')))
+        f.write(">foo A:1-{}\n".format(len(tgt_seq.sequence.replace('-', ''))))
+        f.write("{}\n".format(annotated_seq_of(tgt_seq.sequence.replace('-', ''))))
 
 
     # Do denovo run.
@@ -561,6 +562,7 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
         "-set_weights", "other_pose", "0.0", "intermol", "0.0", "loop_close", "0.0", "free_suite", "0.0", "free_2HOprime", "0.0",
         "-guarantee_no_DNA", "true",
         "-use_legacy_job_distributor", "true",
+        "-new_fold_tree_initializer", "true",
         "-nstruct", "1",
         "-out:file:silent", "{}_based_modeled.out".format(old_pdb)]
     
@@ -569,33 +571,99 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
 
 
 
-def import_dash_pattern(dashed_seq, other_seq: str):
+def import_dash_pattern(already_dashed_seq: Sequence, dest_seq_str: str) -> str:
     """
     Put all the dashes from dashed_seq into other_seq.
     Try to be a LITTLE clever here. We don't want to just shove every in there
     in case there is an insertion. Maybe we should test each insertion to see
     if it improves alignment.
-    """
-    def dash_positions(dashed_seq: str) -> List[int]:
-        return [i for (i, c) in enumerate(dashed_seq) if c == '-']
 
-    def seqs_with_dashes(dashes: List[int], seq_str: str) -> List[str]:
+    Importantly, we have a maximum length to contend with...
+    """
+    
+    # Survey ALL possible positions
+    #def add_dash_recursive(template, trial, first_pos):
+    #    for ii in range(first_pos+1, len(template)):
+    #        print(template)
+    #        print(trial[:ii]+'-'+trial[ii:])
+    #        add_dash_recursive(template, trial[:ii]+'-'+trial[ii:], ii)
+    def add_dash_recursive(template, trial, dashes, current_best):
+        def filled_trial_seq(trial: str, ii: int) -> str:
+            return trial[:ii]+'-'+trial[ii:]+'-'*(len(template)-len(trial)-1)
+
+        #print("Call to add_dash_recursive with parameters:")
+        #print(template.sequence)
+        #print(trial)
+        #print(dashes)
+        n_left_to_add = len(template)-len(trial)
+        #print("Must add", n_left_to_add, "dashes")
+        # Construct
+        if len(dashes) == n_left_to_add:
+            # We have enough.
+            complete_trial_string = "-"*len(template)
+            trial_index = 0
+            for complete_index in range(len(template)-1):
+                #print(dashes, trial, trial_index)
+                if complete_index in dashes: continue
+                else:
+                    complete_trial_string = complete_trial_string[:complete_index]+trial[trial_index]+complete_trial_string[complete_index+1:]
+                    trial_index += 1
+                    if trial_index == len(trial): break
+            #print(complete_trial_string)
+            score = simple_match(template, Sequence(complete_trial_string))
+            #print(current_best)
+            if current_best is None or score > current_best[1]:
+                current_best = (complete_trial_string, score)
+            #print(current_best)
+        else:
+            for ii in range(len(template)):
+                if ii in dashes: continue
+                else:
+                    new_dashes = list(dashes)
+                    new_dashes.append(ii)
+                
+                    current_best = add_dash_recursive(template, trial, new_dashes, current_best)
+
+        #for ii in range(first_pos, len(template)-1):
+        #    print(template.sequence, filled_trial_seq(trial, ii))
+        #    score = simple_match(template, Sequence(filled_trial_seq(trial, ii)))
+        #    if current_best is None or score > current_best[1]:
+        #        current_best = (filled_trial_seq(trial, ii), score)
+        #    print(template.sequence, filled_trial_seq(trial, ii), score)
+        #    if len(trial[:ii]+'-'+trial[ii:]) < len(template) \
+        #        and trial[ii:] != '-'*(len(trial)-ii-1): 
+        #        current_best = add_dash_recursive(template, filled_trial_seq(trial, ii), ii, current_best)
+        return current_best
+    #current_best = ('', -1000000)
+    #print(already_dashed_seq.sequence, len(already_dashed_seq))
+    #print(dest_seq_str, len(dest_seq_str))
+    #best_sequence = add_dash_recursive(already_dashed_seq, dest_seq_str, [], current_best)
+
+
+
+    def dash_positions(dashed_seq_str: str) -> List[int]:
+        return [i for (i, c) in enumerate(dashed_seq_str) if c == '-']
+
+    def seqs_with_dashes(dashes: List[int], seq_str: str, max_len: int) -> List[str]:
         seqs = [seq_str]
-        for i in range(len(dashes)):
-            seq_str = seq_str[0:dashes[i]] + '-' + seq_str[dashes[i]:]
+        for dash in dashes:
+            seq_str = seq_str[0:dash] + '-' + seq_str[dash:]
+            if len(seq_str) > max_len: break
             seqs.append(seq_str)
 
         return seqs
 
-    dash_pos = dash_positions(dashed_seq)
-    seqs = seqs_with_dashes(dash_pos, other_seq)
-    score = None
-    for seq in seqs:
-        newscore = simple_match(Sequence(seq), Sequence(dashed_seq))
+    dash_pos: List[int] = dash_positions(already_dashed_seq.sequence)
+    possible_dest_seq_strs: List[str] = seqs_with_dashes(dash_pos, dest_seq_str, len(already_dashed_seq))
+    score: int = None
+    revised_seq_str: str = ""
+    for possible_dest_seq_str in possible_dest_seq_strs:
+        possible_dest_seq: Sequence = Sequence(possible_dest_seq_strs)
+        newscore: int = simple_match(possible_dest_seq, already_dashed_seq, quiet=True)
         #print(newscore, seq)
         if score is None or newscore > score:
             score = newscore
-            other_seq = seq  
+            revised_seq_str = possible_dest_seq_str  
 
     #for dash in dash_pos:
     #    proposed_new_seq = other_seq[0:dash] + '-' + other_seq[dash:]
@@ -605,7 +673,7 @@ def import_dash_pattern(dashed_seq, other_seq: str):
 
     #print(other_seq)
 
-    return other_seq + (len(dashed_seq) - len(other_seq)) * '-'
+    return revised_seq_str + (len(already_dashed_seq) - len(revised_seq_str)) * '-'
 
 def align_template_library(MSA: str) -> None:
     """
@@ -621,8 +689,8 @@ def align_template_library(MSA: str) -> None:
             f.write("{}\t{} UNALIGNED_PDB_SEQ\n".format(pdb, modomics_from_pdb(pdb).sequence))
             continue
         f.write("{}\t{} ALIGNED_TO\n".format(pdb, seq[0][1].sequence))
-        f.write("{}\t{} PDB_SEQ\n".format(pdb, import_dash_pattern(seq[0][1].sequence, modomics_from_pdb(pdb).sequence)))
-
+        f.write("{}\t{} PDB_SEQ\n".format(pdb, import_dash_pattern(seq[0][1], modomics_from_pdb(pdb).sequence)))
+        exit()
         #print(pdb, seq)
         #print(pdb, import_dash_pattern(seq, modomics_from_pdb(pdb)))
     f.close()
