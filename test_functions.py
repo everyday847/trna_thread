@@ -1,4 +1,6 @@
-from thread_denovo_trna import dashed, simple_match, Sequence
+from lib.str_manip import dashed
+from thread_denovo_trna import simple_match
+from lib.Sequence import Sequence
 import mypy
 from typing import List, Dict, Tuple
 
