@@ -2,3 +2,5 @@ data/all_trna_structure_seqs.dat
 .cache/
 __pycache__/
 *.pyc
+.mypy_cache
+.pytest_cache
