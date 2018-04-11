@@ -1,6 +1,7 @@
 import os, mypy
 from typing import Dict, List, Tuple
 from lib.Sequence import Sequence
+import numpy as np
 
 ###
 #   Sequence translation (among Rosetta and Modomics nomenclatures)
@@ -20,6 +21,15 @@ tlc_to_mod = { #                                                                
                "MOU": '5', "CNT": '!', "CNS": '$', "CNM": ')', "APU": 'X', "MHU": ',', "H2U": 'D', "PSU": 'P',
                "1PU": ']', "MPU": 'Z' }
 mod_to_tlc: Dict[str, str] = dict(zip(tlc_to_mod.values(), tlc_to_mod.keys()))
+
+#U_equivs = np.array(['T', 'P', '$', '3', '\\', '2', 'J', '4', 'F', '{', 'S', '&', '~', '1', 'V', '5', '!', '$', ')', 'X', ',', 'D', ']', 'Z'])
+#A_equivs = np.array(['[', '+', '"', '/', '*', '=', '6', 'E', ':', '^', '`', ])
+#C_equivs = np.array(['%', 'B', 'M', '?', '\'', '}', '>', '<'])
+#G_equivs = np.array(['7', 'Y', 'Q', 'I', 'O', 'K', 'L', '#', 'R', '|', '(', 'W', ])
+U_equivs = {'T', 'P', '$', '3', '\\', '2', 'J', '4', 'F', '{', 'S', '&', '~', '1', 'V', '5', '!', '$', ')', 'X', ',', 'D', ']', 'Z'}
+A_equivs = {'[', '+', '"', '/', '*', '=', '6', 'E', ':', '^', '`'}
+C_equivs = {'%', 'B', 'M', '?', '\'', '}', '>', '<'}
+G_equivs = {'7', 'Y', 'Q', 'I', 'O', 'K', 'L', '#', 'R', '|', '(', 'W'}
 
 def mod_from_tlc(tlc: str) -> str:
     """
@@ -91,7 +101,7 @@ def dashed(positions: List[int], chain: str) -> str:
             if acc_start is None:
                 acc_start = p
             acc_end = p
-            print("now acc_start acc_end", acc_start, acc_end)
+            #print("now acc_start acc_end", acc_start, acc_end)
         elif p != max(positions):
             if acc_start is not None and acc_end is not None:
                 if acc_start != acc_end:

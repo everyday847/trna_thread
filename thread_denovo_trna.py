@@ -4,8 +4,9 @@ import sys, subprocess, mypy
 from typing import Dict, List, Tuple
 from lib.Sequence import Sequence
 from lib.file_io import exe, my_loc, get_seqs, get_seqs_mfa
-from lib.str_manip import modomics_from_pdb
+from lib.str_manip import modomics_from_pdb, U_equivs, A_equivs, C_equivs, G_equivs
 from lib.rosetta_calls import remodel_new_sequence
+from timeit import timeit, repeat
 
 """
 Homology modeling of novel tRNA sequences expressed in Modomics's extended
@@ -45,31 +46,46 @@ single-letter-code nomenclature.
 #   Sequence alignment scoring
 ###
 
+import numpy as np
+
 def simple_match(the_seq1: Sequence, the_seq2: Sequence, quiet=True) -> int:
     """
     Assumes seq1 and seq2 are aligned already (i.e., a 'static score').
-    Rewards similarity in length, letter matches, purine matches, and U variant
-    matches. Could reward other variants! Those just took priority because of 
-    the ultra-characteristic TP sequence.
+    Rewards similarity in length, letter matches, purine matches, and
+    variant matches.
 
     Ooh, consider not penalizing complementary WC mismatches within helices?
-    would need SS
+    would need SS. But, now we have that! So we can turn this on whenever we want.
+
+    NOTE: I have tried using numba's JIT as well as making seq1, seq2 into
+    numpy objects. The former didn't run and the latter made it 2-5x slower.
+    This is still THE bottleneck though.
     """
+
     seq1: str = the_seq1.sequence
     seq2: str = the_seq2.sequence
 
     score: int = (len(seq1) - len(seq2))*3
+    
+    # For numpy chararrays, must iterate via index.
+
     for c1, c2 in zip(seq1, seq2):
-        if c1 == c2: score += 5
+       if c1 == c2: score += 5
         else:
             if c1 == 'A' and c2 == 'G': score += 2
             elif c1 == 'G' and c2 == 'A': score += 2
             elif c1 == 'C' and c2 == 'U': score += 2
             elif c1 == 'U' and c2 == 'C': score += 2
-            elif c1 == 'U' and c2 == 'T': score += 3
-            elif c1 == 'T' and c2 == 'U': score += 3
-            elif c1 == 'U' and c2 == 'P': score += 3
-            elif c1 == 'P' and c2 == 'U': score += 3
+
+            elif c1 == 'U' and c2 in U_equivs: score += 3
+            elif c1 in U_equivs and c2 == 'U': score += 3
+            elif c1 == 'A' and c2 in A_equivs: score += 3
+            elif c1 in A_equivs and c2 == 'A': score += 3
+            elif c1 == 'G' and c2 in G_equivs: score += 3
+            elif c1 in G_equivs and c2 == 'G': score += 3
+            elif c1 == 'C' and c2 in C_equivs: score += 3
+            elif c1 in C_equivs and c2 == 'C': score += 3
+
             elif (c1 == '-' or c2 == '-'): score -= 10
 
     if not quiet:
@@ -298,6 +314,10 @@ We need to make more stuff optional so that users can request that we use our pr
 import argparse
 
 if __name__ == '__main__':
+
+
+    #print(repeat("simple_match(Sequence('ACUU--T-'), Sequence('CATP-GG-'))", number=10000, repeat=3, globals=globals()))
+    
     parser = argparse.ArgumentParser(description="Thread tRNAs onto templates")
     parser.add_argument('--pdb', nargs='?', help='template (if omitted, use shipped library')
     parser.add_argument('--mapfile', nargs='?', help='electron density mapfile associated with template (useful for keeping minimization close)')
