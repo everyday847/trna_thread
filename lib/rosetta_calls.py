@@ -141,6 +141,62 @@ def translation_dicts(seq_str: str, pdb_seq_str: str) -> Tuple[Dict[int, int], D
 # This string 'colors' bits of tRNA structure that should be rebuilt together.
 trna_structure_coloring = "P(((((((VV((((DDDDD..DDDD))))V(((((SSSSSSS)))))VVVVVVVVVVVVVVVVVVVVVVVV(((((.....DD))))))))))))PPPP"
 
+# TODO: tests.
+def remove_if_of_common_color(mm: int, common_structure: List[int], trna_structure_coloring=trna_structure_coloring) -> List[int]:
+    """
+    If one residue is deleted or added, what should be 
+    rebuilt? Use the 'common coloring' string above to
+    figure out what. Common letters -- as well as base 
+    pair partners of modified residues -- get removed.
+    """
+
+    all_bp: Dict[int, int] = all_bp_partners(trna_structure_coloring)
+
+    bp_chars = ['(', ')', '[', ']', '{', '}']
+    positions_of_same_color: List[int] = []
+    char_to_match = trna_structure_coloring[mm]
+    if char_to_match == '.': 
+        positions_of_same_color = [mm]
+    elif char_to_match in bp_chars:
+        positions_of_same_color = [mm, all_bp[mm]]
+    else: positions_of_same_color = [ii for ii, cc in enumerate(trna_structure_coloring) 
+            if cc == char_to_match]
+    
+    for cc in positions_of_same_color: 
+        if cc in common_structure: common_structure.remove(cc)
+    
+    return common_structure
+
+
+def get_common_structure(seq_str: str, tgt_seq_str: str) -> List[int]:
+    """
+    Identify additions and deletions relative to the alignment,
+    then separately account for the 'common structure' requirement
+    so that we rebuild groups of interacting residues.
+    """
+
+    mismatches = []
+    for ii, (c1, c2) in enumerate(zip(seq_str, tgt_seq_str)):
+        if c1 != c2 and ((c1 == '-' and c2 != '-') or (c2 == '-' and c1 != '-')):
+            print("mismatch at {pos}".format(pos=ii))
+            mismatches.append( ii )
+    common_structure = [ii for ii, _ in enumerate(seq_str)]
+    for mm in mismatches:
+        if mm in common_structure:
+            common_structure = remove_if_of_common_color(mm, common_structure)
+    return common_structure
+
+
+    
+def write_fasta(fasta_file: str, tgt_seq: Sequence) -> None:    
+    with open(fasta_file, "w") as f:
+        #print(tgt_seq)
+        #print(tgt_seq.sequence.replace('-',''))
+        #print(len(tgt_seq.sequence.replace('-','')))
+        f.write(">foo A:1-{}\n".format(len(tgt_seq.sequence.replace('-', ''))))
+        f.write("{}\n".format(annotated_seq_of(tgt_seq.sequence.replace('-', ''))))
+
+
 def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) -> None:
     """
     This is the main workhorse. We need to figure out a path from A to B. How do
@@ -151,45 +207,10 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
     2. Trim input PDB to common structure. Figure out which sequence positions 
     this is.
     3. Thread new sequence using above effort onto common structure. [How to 
-    restrict minimization?]
-    4. 
+    restrict minimization? Let's say we just do chis for now, unless a mapfile
+    is provided.]
+    4. FARFAR or SWM run to build new residues.
     """
-    
-    def remove_if_of_common_color(mm: int, common_structure: List[int], trna_structure_coloring=trna_structure_coloring) -> List[int]:
-        """
-        NOTE: 'common color' logic applies to letters in the 'structure 
-        coloring' string, not to ss characters, handled separately. """
-
-        all_bp: Dict[int, int] = all_bp_partners(trna_structure_coloring)
-
-        bp_chars = ['(', ')', '[', ']', '{', '}']
-        common_color_set: List[int] = []
-        char_to_match = trna_structure_coloring[mm]
-        if char_to_match == '.': 
-            common_color_set = [mm]
-        elif char_to_match in bp_chars:
-            common_color_set = [mm, all_bp[mm]]
-        else: common_color_set = [ii for ii, cc in enumerate(trna_structure_coloring) 
-                if cc == char_to_match]
-        
-        for cc in common_color_set: 
-            if cc in common_structure: common_structure.remove(cc)
-        
-        return common_structure
-
-
-    def get_common_structure(seq_str: str, tgt_seq_str: str) -> List[int]:
-        mismatches = []
-        for ii, (c1, c2) in enumerate(zip(seq_str, tgt_seq_str)):
-            if c1 != c2 and ((c1 == '-' and c2 != '-') or (c2 == '-' and c1 != '-')):
-                print("mismatch at {pos}".format(pos=ii))
-                mismatches.append( ii )
-        common_structure = [ii for ii, _ in enumerate(seq_str)]
-        for mm in mismatches:
-            if mm in common_structure:
-                common_structure = remove_if_of_common_color(mm, common_structure)
-        return common_structure
-
 
     print("PDB:", pdb)
     print("\nModeling from seq to target sequence:")
@@ -235,7 +256,7 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
         "-ignore_zero_occupancy", "false",
         "-overwrite",
         "-set_weights", "other_pose", "0.0", "intermol", "0.0", "loop_close", "0.0", "free_suite", "0.0", "free_2HOprime", "0.0"]
-    print(command)
+    #print(command)
     subprocess.run(command)
     
     # Remove LINK records. They will be misleading because of a bug in the threading code.
@@ -246,26 +267,18 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
     # We would have to check that this is robust to any starting numbering (T:10-85)
     new_trimmed = [old_seq2new_seq[p] for p in pdb_pos_trim]
 
-
-
     numbering = dashed(new_trimmed, 'A')
-    print(numbering)
+    #print(numbering)
     
     # renumber input if needed? For sure to new chain.
     # ugly -- but numbering has spaces in it
     command = ["renumber_pdb_in_place.py", "{}_input.pdb".format(old_pdb)]
     command.extend(numbering.split())
-    print(command)
+    #print(command)
     subprocess.run(command)
 
     # Create the overall fasta.
-    with open("target.fasta", "w") as f:
-        print(tgt_seq)
-        print(tgt_seq.sequence.replace('-',''))
-        print(len(tgt_seq.sequence.replace('-','')))
-        f.write(">foo A:1-{}\n".format(len(tgt_seq.sequence.replace('-', ''))))
-        f.write("{}\n".format(annotated_seq_of(tgt_seq.sequence.replace('-', ''))))
-
+    write_fasta("target.fasta", tgt_seq):
 
     # Do denovo run.
     command = [exe("rna_denovo"),
