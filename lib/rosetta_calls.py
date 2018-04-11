@@ -278,7 +278,7 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
     subprocess.run(command)
 
     # Create the overall fasta.
-    write_fasta("target.fasta", tgt_seq):
+    write_fasta("target.fasta", tgt_seq)
 
     # Do denovo run.
     command = [exe("rna_denovo"),

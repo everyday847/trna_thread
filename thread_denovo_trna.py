@@ -70,7 +70,7 @@ def simple_match(the_seq1: Sequence, the_seq2: Sequence, quiet=True) -> int:
     # For numpy chararrays, must iterate via index.
 
     for c1, c2 in zip(seq1, seq2):
-       if c1 == c2: score += 5
+        if c1 == c2: score += 5
         else:
             if c1 == 'A' and c2 == 'G': score += 2
             elif c1 == 'G' and c2 == 'A': score += 2
