@@ -128,13 +128,18 @@ def seq_map(seq1: str, seq2: str) -> Dict[int, int]:
 def translation_dicts(seq_str: str, pdb_seq_str: str) -> Tuple[Dict[int, int], Dict[int, int]]:
     pdb_pos2align_pos = {}
     pdb_pos = 1
-    for align_pos, align_char in enumerate(seq_str):
-        if align_char == '-': continue
-        if align_char != pdb_seq_str[pdb_pos-1]: 
-            #pdb_pos += 1
-            continue
-        pdb_pos2align_pos[pdb_pos] = align_pos
-        pdb_pos += 1
+    try:
+        for align_pos, align_char in enumerate(seq_str):
+            if align_char == '-': continue
+            if align_char != pdb_seq_str[pdb_pos-1]: 
+                #pdb_pos += 1
+                continue
+            pdb_pos2align_pos[pdb_pos] = align_pos
+            pdb_pos += 1
+    except:
+        print("ERROR:")
+        print("PDB seq:", pdb_seq_str)
+        print("SEQ seq:", seq_str)
     align_pos2pdb_pos = dict(zip(pdb_pos2align_pos.values(), pdb_pos2align_pos.keys()))
     return (pdb_pos2align_pos, align_pos2pdb_pos)
 
@@ -197,7 +202,7 @@ def write_fasta(fasta_file: str, tgt_seq: Sequence) -> None:
         f.write("{}\n".format(annotated_seq_of(tgt_seq.sequence.replace('-', ''))))
 
 
-def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) -> None:
+def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile: str, defer: bool) -> None:
     """
     This is the main workhorse. We need to figure out a path from A to B. How do
     we do this?
@@ -242,13 +247,13 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
 
     #exit()
     print("Eventual sequence length will be", len([c for c in tgt_seq.sequence if c != '-']))
-    trim_pdb_to_res(pdb, pdb.replace('.pdb', '_trimmed.pdb'), pdb_pos_trim)
+    trim_pdb_to_res(pdb, pdb.replace('.pdb', '_trimmed_{}.pdb'.format(old_pdb)), pdb_pos_trim)
 
     # Thread them to their new identities.
     tgt_seq_for_thread = "".join([tgt_seq.sequence[c] for c in common_structure])
 
     command = [exe("rna_thread_and_minimize"),
-        "-s", pdb.replace('.pdb', '_trimmed.pdb'), 
+        "-s", pdb.replace('.pdb', '_trimmed_{}.pdb'.format(old_pdb)), 
         "-seq", tgt_seq_for_thread.replace('-',''), 
         "-input_sequence_type", "MODOMICS", 
         "-score:weights", "stepwise/rna/rna_res_level_energy7beta.wts",
@@ -260,7 +265,7 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
     subprocess.run(command)
     
     # Remove LINK records. They will be misleading because of a bug in the threading code.
-    cull_LINKs(pdb.replace('.pdb', '_trimmed_0001.pdb'), "{}_input.pdb".format(old_pdb))
+    cull_LINKs(pdb.replace('.pdb', '_trimmed_{}_0001.pdb'.format(old_pdb)), "{}_input.pdb".format(old_pdb))
 
     old_seq2new_seq: Dict[int, int] = seq_map(seq.sequence, tgt_seq.sequence)
 
@@ -295,6 +300,10 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile) ->
         "-nstruct", "1",
         "-out:file:silent", "{}_based_modeled.out".format(old_pdb)]
     
-    subprocess.run(command)
-    subprocess.run(["extract_lowscore_decoys.py", "{}_based_modeled.out".format(old_pdb)])
+    if defer:
+        with open("README_FARFAR_{}".format(old_pdb), "w") as f:
+            f.write("{}\n\n".format(" ".join(command)))
+    else:
+        subprocess.run(command)
+        subprocess.run(["extract_lowscore_decoys.py", "{}_based_modeled.out".format(old_pdb)])
 
