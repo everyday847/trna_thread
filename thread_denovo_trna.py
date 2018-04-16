@@ -104,7 +104,7 @@ DOMAIN ANALYSIS:
 """
 
 def match_seq_to_best_template_seq(tgt_seq: Sequence, templates: List[Tuple[str, Sequence]]) -> List[Tuple[str, Sequence]]:
-    print("In match_seq_to_best_template_seq")
+    print("\nMatching desired target sequence to our template library...")
 
     # Filter sequences for those of same true length. If 1, done.
     # If zero, quit entirely; no point.
@@ -120,29 +120,19 @@ def match_seq_to_best_template_seq(tgt_seq: Sequence, templates: List[Tuple[str,
         # s is tgt_seq, but expanded based on new_seq's dash pattern
         s: str = import_dash_pattern(already_dashed_seq=new_seq, 
             dest_seq_str=tgt_seq.sequence)
-        #print("Back from import", s)
-        #s: str = import_dash_pattern(tgt_seq, new_seq.sequence)
         seq_matching_to_pdb[new_seq.sequence] = simple_match(Sequence(s), new_seq, quiet=False)
-        #seq_matching_to_pdb[s] = simple_match(Sequence(s), new_seq, quiet=False)
-        #seq_matching_to_pdb[s] = simple_match(Sequence(s), tgt_seq, quiet=False)
-        
-        #new_seqs[ii] = (pp, Sequence(s))
-
-    #seq_matching_to_pdb = {s.sequence: simple_match(tgt_seq, s) for _, s in new_seqs}
-    best_score: int = max(seq_matching_to_pdb.values())
-    #print(seq_matching_to_pdb)
-    #print(new_seqs)
-    #new_seqs = [(p, s) for (p, s) in new_seqs if s.sequence.replace('-', '') in seq_matching_to_pdb and seq_matching_to_pdb[s.sequence.replace('-', '')] == best_score]
+  
+    # Temp: we don't want only the best score, but maybe the top five.
+    #best_score: int = max(seq_matching_to_pdb.values())
+    #new_seqs = [(p, s) for (p, s) in new_seqs if s.sequence in seq_matching_to_pdb.keys() and seq_matching_to_pdb[s.sequence] == best_score]
+    best_score: int = sorted(list(set(seq_matching_to_pdb.values())))[-20]
+    new_seqs = [(p, s) for (p, s) in new_seqs if s.sequence in seq_matching_to_pdb.keys() and seq_matching_to_pdb[s.sequence] >= best_score]
     
-
-    new_seqs = [(p, s) for (p, s) in new_seqs if s.sequence in seq_matching_to_pdb.keys() and seq_matching_to_pdb[s.sequence] == best_score]
+    print("There are {n} sequences that match your template sequence to a score of {score}:".format(n=len(new_seqs), score=best_score))
+    for ii, (p, q) in enumerate(new_seqs):
+        print("\tSequence {serial} -- score {score}\n\t\tPDB: {pdb}\n\t\tSEQ: {seq}\n"
+            .format(serial=ii, score=seq_matching_to_pdb[q.sequence], pdb=p, seq=q.sequence))
     
-    print("There are, for top seq exact-match", len(new_seqs), "(each scores {score} out of {length})".format(score=best_score, length=pdb_len))
-    for (p, q) in new_seqs:
-        #pass
-        print(p)
-        print(q)
-
     return new_seqs
 
 def match_pdb_to_best_sequence(pdb: str, MSA_file: str) -> List[Tuple[str, Sequence]]:
@@ -155,34 +145,32 @@ def match_pdb_to_best_sequence(pdb: str, MSA_file: str) -> List[Tuple[str, Seque
     print("Attempting to align", modomics_seq, "to MSA templates length", len(MSA_seqs))
     return match_seq_to_best_template_seq(modomics_from_pdb(pdb), MSA_seqs)
 
-def add_dash_recursive(template, trial, dashes, current_best):
+def add_dash_recursive(template: Sequence, trial: str, dashes, current_best):
+    """
+    Not in current use -- this is a very expensive function that 
+    is good for aligning very difficult sequences. At the moment we
+    have been using a few manual tweaks after automated alignment
+    and that has been good enough.
+    """
+    
     def filled_trial_seq(trial: str, ii: int) -> str:
         return trial[:ii]+'-'+trial[ii:]+'-'*(len(template)-len(trial)-1)
 
-    #print("Call to add_dash_recursive with parameters:")
-    #print(template.sequence)
-    #print(trial)
-    #print(dashes)
     n_left_to_add = len(template)-len(trial)
-    #print("Must add", n_left_to_add, "dashes")
     # Construct
     if len(dashes) == n_left_to_add:
         # We have enough.
         complete_trial_string = "-"*len(template)
         trial_index = 0
         for complete_index in range(len(template)-1):
-            #print(dashes, trial, trial_index)
             if complete_index in dashes: continue
             else:
                 complete_trial_string = complete_trial_string[:complete_index]+trial[trial_index]+complete_trial_string[complete_index+1:]
                 trial_index += 1
                 if trial_index == len(trial): break
-        #print(complete_trial_string)
         score = simple_match(template, Sequence(complete_trial_string))
-        #print(current_best)
         if current_best is None or score > current_best[1]:
             current_best = (complete_trial_string, score)
-        #print(current_best)
     else:
         for ii in range(len(template)):
             if ii in dashes: continue
@@ -192,20 +180,7 @@ def add_dash_recursive(template, trial, dashes, current_best):
             
                 current_best = add_dash_recursive(template, trial, new_dashes, current_best)
 
-    #for ii in range(first_pos, len(template)-1):
-    #    print(template.sequence, filled_trial_seq(trial, ii))
-    #    score = simple_match(template, Sequence(filled_trial_seq(trial, ii)))
-    #    if current_best is None or score > current_best[1]:
-    #        current_best = (filled_trial_seq(trial, ii), score)
-    #    print(template.sequence, filled_trial_seq(trial, ii), score)
-    #    if len(trial[:ii]+'-'+trial[ii:]) < len(template) \
-    #        and trial[ii:] != '-'*(len(trial)-ii-1): 
-    #        current_best = add_dash_recursive(template, filled_trial_seq(trial, ii), ii, current_best)
     return current_best
-#current_best = ('', -1000000)
-#print(already_dashed_seq.sequence, len(already_dashed_seq))
-#print(dest_seq_str, len(dest_seq_str))
-#best_sequence = add_dash_recursive(already_dashed_seq, dest_seq_str, [], current_best)
 
 def dash_positions(dashed_seq_str: str) -> List[int]:
     return [i for (i, c) in enumerate(dashed_seq_str) if c == '-']
@@ -228,13 +203,6 @@ def import_dash_pattern(already_dashed_seq: Sequence, dest_seq_str: str) -> str:
 
     Importantly, we have a maximum length to contend with...
     """
-    
-    # Survey ALL possible positions
-    #def add_dash_recursive(template, trial, first_pos):
-    #    for ii in range(first_pos+1, len(template)):
-    #        print(template)
-    #        print(trial[:ii]+'-'+trial[ii:])
-    #        add_dash_recursive(template, trial[:ii]+'-'+trial[ii:], ii)
 
     dash_pos: List[int] = dash_positions(already_dashed_seq.sequence)
     possible_dest_seq_strs: List[str] = seqs_with_dashes(dash_pos, dest_seq_str, len(already_dashed_seq))
@@ -243,22 +211,11 @@ def import_dash_pattern(already_dashed_seq: Sequence, dest_seq_str: str) -> str:
     for possible_dest_seq_str in possible_dest_seq_strs:
         possible_dest_seq: Sequence = Sequence(possible_dest_seq_str)
         newscore: int = simple_match(possible_dest_seq, already_dashed_seq, quiet=True)
-        #print(newscore, possible_dest_seq)
         if score is None or newscore > score:
             score = newscore
             revised_seq_str = possible_dest_seq_str  
 
-    #for dash in dash_pos:
-    #    proposed_new_seq = other_seq[0:dash] + '-' + other_seq[dash:]
-    #    match_scores = match(proposed_new_seq, dashed_seq), match(other_seq, dashed_seq)
-    #    if match_scores[0] >= match_scores[1]:
-    #        other_seq = proposed_new_seq
-
-    #print(other_seq)
-
     return revised_seq_str + (len(already_dashed_seq) - len(revised_seq_str)) * '-'
-
-
 
 def align_template_library(MSA: str) -> None:
     """
@@ -304,7 +261,7 @@ def main(args):
         if 'a' in tgt_seq.sequence and 'g' in tgt_seq.sequence and 'c' in tgt_seq.sequence and 'u' in tgt_seq.sequence:
             # annotated seq format, must translate first.
             tgt_seq = ann_to_mod(tgt_seq)
-        remodel_new_sequence(s, tgt_seq, p, args.nstruct)
+        remodel_new_sequence(s, tgt_seq, p, args.nstruct, args.defer)
 
 
 """
@@ -323,6 +280,7 @@ if __name__ == '__main__':
     parser.add_argument('--mapfile', nargs='?', help='electron density mapfile associated with template (useful for keeping minimization close)')
     parser.add_argument('--seq_file', nargs=1, help='target sequence file in modomics format')
     parser.add_argument('--nstruct', nargs='?', help='number of structures per template', default=1)
+    parser.add_argument('--defer', nargs=1, help='defer execution (for cluster runs)', default=True)
 
     args = parser.parse_args()
     main(args)
