@@ -7,25 +7,24 @@ import numpy as np
 #   Sequence translation (among Rosetta and Modomics nomenclatures)
 ###
 
+# yW won't work for some reason? change to YYG always. ugh.
 # YG is yW, AET is MTA, G7M is 7MG, QUO is   Q, 1RN is CNS, YYG is yW [ish], 70U is MST, 12A is M26, 2MU is 52U, 6IA is I6A
+# oh crap: the first stuff breaks mod_to_tlc for situations where we disagree with PDB. This is a whole mess for
+# YYG.
 tlc_to_mod = { #                                                                       note this is the enantiomer at the AA
-               "GTP": 'G', " YG": 'Y', "AET": 'E', "G7M": '7', "QUO": 'Q', "1RN": '$', "YYG": 'Y', "  I": 'I',
+               "GTP": 'G', "YYG": 'Y', "AET": 'E', "G7M": '7', "QUO": 'Q', "1RN": '$', "YYG": 'Y', "  I": 'I',
                "70U": '3', "12A": '[', "2MU": '\\', "6IA": '+',
 
                "  A": 'A', "  C": 'C', "  G": 'G', "  U": 'U', "1MA": '"', "2MA": '/', "I6A": '+', "MIA": '*',
-               "MA6": '=', "T6A": '6', "MTA": 'E', "M26": '[', "OMA": ':', "INO": 'I', "M1I": 'O', "RIA": '^',
+               "MA6": '=', "T6A": '6', "AET": 'E', "M26": '[', "OMA": ':', "INO": 'I', "M1I": 'O', "RIA": '^',
                "IHA": '`', "S2C": '%', "OMC": 'B', "A4C": 'M', "5MC": '?', "3MC": '\'', "K2C": '}', "F5C": '>',
                "52C": '<', "1MG": 'K', "2MG": 'L', "OMG": '#', "M2G": 'R', "M3G": '|', "7MG": '7', "FA7": '(',
-               "  Q": 'Q', " yW": 'Y', "O2W": 'W', "2SU": '2', "OMU": 'J', "4SU": '4', "5MU": 'T', "2ST": 'F',
+               "  Q": 'Q', "YYG": 'Y', "O2W": 'W', "2SU": '2', "OMU": 'J', "4SU": '4', "5MU": 'T', "2ST": 'F',
                "52U": '\\', "NMT": '{', "NST": 'S', "CST": '&', "CMT": '~', "MOT": '1', "MST": '3', "OAU": 'V',
                "MOU": '5', "CNT": '!', "CNS": '$', "CNM": ')', "APU": 'X', "MHU": ',', "H2U": 'D', "PSU": 'P',
                "1PU": ']', "MPU": 'Z' }
 mod_to_tlc: Dict[str, str] = dict(zip(tlc_to_mod.values(), tlc_to_mod.keys()))
 
-#U_equivs = np.array(['T', 'P', '$', '3', '\\', '2', 'J', '4', 'F', '{', 'S', '&', '~', '1', 'V', '5', '!', '$', ')', 'X', ',', 'D', ']', 'Z'])
-#A_equivs = np.array(['[', '+', '"', '/', '*', '=', '6', 'E', ':', '^', '`', ])
-#C_equivs = np.array(['%', 'B', 'M', '?', '\'', '}', '>', '<'])
-#G_equivs = np.array(['7', 'Y', 'Q', 'I', 'O', 'K', 'L', '#', 'R', '|', '(', 'W', ])
 U_equivs = {'T', 'P', '$', '3', '\\', '2', 'J', '4', 'F', '{', 'S', '&', '~', '1', 'V', '5', '!', '$', ')', 'X', ',', 'D', ']', 'Z'}
 A_equivs = {'[', '+', '"', '/', '*', '=', '6', 'E', ':', '^', '`'}
 C_equivs = {'%', 'B', 'M', '?', '\'', '}', '>', '<'}
