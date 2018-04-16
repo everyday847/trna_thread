@@ -1,5 +1,5 @@
 from lib.str_manip import dashed
-from thread_denovo_trna import simple_match
+from thread_denovo_trna import simple_match, import_dash_pattern
 from lib.Sequence import Sequence
 import mypy
 from typing import List, Dict, Tuple
@@ -44,3 +44,18 @@ def test_simple_match_pyrimidine_eq():
 
 def test_simple_match_mod_U_eq():
     assert(simple_match(Sequence('U-'), Sequence('T-')) == 8)
+
+def test_import_dash_pattern_middle():
+    assert(import_dash_pattern(Sequence('A--A', '....'), 'GG') == 'G--G')
+
+def test_import_dash_pattern_beginning():
+    assert(import_dash_pattern(Sequence('---AA', '....'), 'GG') == '---GG')
+
+def test_import_dash_pattern_end():
+    assert(import_dash_pattern(Sequence('AA---', '....'), 'GG') == 'GG---')
+
+def test_import_dash_pattern_dashes():
+    """
+    Does this make sense?
+    """
+    assert(import_dash_pattern(Sequence('AA---', '....'), 'G-G') == 'G---G')
