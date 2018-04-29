@@ -173,7 +173,7 @@ def remove_if_of_common_color(mm: int, common_structure: List[int], trna_structu
     return common_structure
 
 
-def get_common_structure(seq_str: str, tgt_seq_str: str) -> List[int]:
+def get_common_structure(seq: Sequence, tgt_seq: Sequence, aggro: bool) -> List[int]:
     """
     Identify additions and deletions relative to the alignment,
     then separately account for the 'common structure' requirement
@@ -181,11 +181,11 @@ def get_common_structure(seq_str: str, tgt_seq_str: str) -> List[int]:
     """
 
     mismatches = []
-    for ii, (c1, c2) in enumerate(zip(seq_str, tgt_seq_str)):
-        if c1 != c2 and ((c1 == '-' and c2 != '-') or (c2 == '-' and c1 != '-')):
+    for ii, (c1, c2) in enumerate(zip(seq.sequence, tgt_seq.sequence)):
+        if c1 != c2 and ((aggro and seq.secstruct[ii] == '.') or ((c1 == '-' and c2 != '-') or (c2 == '-' and c1 != '-'))):
             print("mismatch at {pos}".format(pos=ii))
             mismatches.append( ii )
-    common_structure = [ii for ii, _ in enumerate(seq_str)]
+    common_structure = [ii for ii, _ in enumerate(seq.sequence)]
     for mm in mismatches:
         if mm in common_structure:
             common_structure = remove_if_of_common_color(mm, common_structure)
@@ -202,7 +202,7 @@ def write_fasta(fasta_file: str, tgt_seq: Sequence) -> None:
         f.write("{}\n".format(annotated_seq_of(tgt_seq.sequence.replace('-', ''))))
 
 
-def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile: str, defer: bool) -> None:
+def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, nstruct: int, mapfile: str, defer: bool, aggro: bool) -> None:
     """
     This is the main workhorse. We need to figure out a path from A to B. How do
     we do this?
@@ -226,7 +226,9 @@ def remodel_new_sequence(seq: Sequence, tgt_seq: Sequence, pdb: str, mapfile: st
     old_pdb: str = pdb[-10:-4]
     pdb = correct_for_template_path(pdb)
 
-    common_structure = get_common_structure(seq.sequence, tgt_seq.sequence)
+    # Now relies on the whole Sequence because we need to know if a position is a
+    # loop (where, if aggro, a mere letter mismatch requires rebuild)
+    common_structure = get_common_structure(seq, tgt_seq, aggro)
     
     print("So, common structure remaining (in alignment numbering) is", common_structure)
     print("COL:", trna_structure_coloring)

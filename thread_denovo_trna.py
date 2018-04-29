@@ -132,7 +132,7 @@ def match_seq_to_best_template_seq(tgt_seq: Sequence, templates: List[Tuple[str,
     for ii, (p, q) in enumerate(new_seqs):
         print("\tSequence {serial} -- score {score}\n\t\tPDB: {pdb}\n\t\tSEQ: {seq}\n"
             .format(serial=ii, score=seq_matching_to_pdb[q.sequence], pdb=p, seq=q.sequence))
-    
+
     return new_seqs
 
 def match_pdb_to_best_sequence(pdb: str, MSA_file: str) -> List[Tuple[str, Sequence]]:
@@ -261,7 +261,7 @@ def main(args):
         if 'a' in tgt_seq.sequence and 'g' in tgt_seq.sequence and 'c' in tgt_seq.sequence and 'u' in tgt_seq.sequence:
             # annotated seq format, must translate first.
             tgt_seq = ann_to_mod(tgt_seq)
-        remodel_new_sequence(s, tgt_seq, p, args.nstruct, args.defer)
+        remodel_new_sequence(s, tgt_seq, p, args.nstruct, '', args.defer, args.aggressive)
 
 
 """
@@ -281,6 +281,7 @@ if __name__ == '__main__':
     parser.add_argument('--seq_file', nargs=1, help='target sequence file in modomics format')
     parser.add_argument('--nstruct', nargs='?', help='number of structures per template', default=1)
     parser.add_argument('--defer', nargs=1, help='defer execution (for cluster runs)', default=True)
+    parser.add_argument('--aggressive', nargs=1, help='make aggressive deletions (every mismatch)', default=False)
 
     args = parser.parse_args()
     main(args)
